@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_ai_chat_session_tree" model="ir.ui.view">
+        <field name="name">ai.chat.session.tree</field>
+        <field name="model">ai.chat.session</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="user_id"/>
+                <field name="message_count"/>
+                <field name="last_message_date"/>
+                <field name="state"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_ai_chat_session_form" model="ir.ui.view">
+        <field name="name">ai.chat.session.form</field>
+        <field name="model">ai.chat.session</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_close" type="object" string="Cerrar"
+                            invisible="state == 'closed'"/>
+                    <button name="action_reopen" type="object" string="Reabrir"
+                            invisible="state == 'open'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="user_id"/>
+                        <field name="last_message_date"/>
+                    </group>
+                    <field name="message_ids">
+                        <tree>
+                            <field name="create_date"/>
+                            <field name="role"/>
+                            <field name="content"/>
+                            <field name="tool_name"/>
+                            <field name="status"/>
+                            <field name="tokens_input"/>
+                            <field name="tokens_output"/>
+                        </tree>
+                        <form>
+                            <group>
+                                <field name="role"/>
+                                <field name="status"/>
+                                <field name="tool_name"/>
+                            </group>
+                            <field name="content"/>
+                            <group string="Traza de herramienta">
+                                <field name="tool_params" widget="json"/>
+                                <field name="tool_result" widget="json"/>
+                            </group>
+                        </form>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_chat_session" model="ir.actions.act_window">
+        <field name="name">Conversaciones</field>
+        <field name="res_model">ai.chat.session</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_ai_data_chat_root" name="Asistente de datos" sequence="90"/>
+    <menuitem id="menu_ai_chat_assistant" name="Asistente"
+              parent="menu_ai_data_chat_root" action="action_ai_chat"
+              sequence="10"/>
+    <menuitem id="menu_ai_chat_sessions" name="Conversaciones"
+              parent="menu_ai_data_chat_root" action="action_ai_chat_session"
+              sequence="20"/>
+
+</odoo>

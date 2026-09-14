@@ -1,0 +1,101 @@
+.o_ai_chat {
+    background-color: #f9f9f9;
+
+    .o_ai_chat_sidebar {
+        width: 260px;
+        min-width: 220px;
+        background-color: #fff;
+    }
+
+    .o_ai_chat_session_item {
+        cursor: pointer;
+
+        &:hover {
+            background-color: #f0f0f0;
+        }
+
+        &.o_active {
+            background-color: #e9f0ff;
+            border-left: 3px solid #714b67;
+        }
+    }
+
+    .o_ai_chat_main {
+        min-width: 0;
+    }
+
+    .o_ai_chat_msg {
+        display: flex;
+
+        .o_ai_chat_bubble {
+            max-width: 85%;
+            width: fit-content;
+            padding: 8px 12px;
+            border-radius: 10px;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+        }
+
+        .o_ai_chat_text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-width: 640px;
+
+            code {
+                padding: 1px 4px;
+                border-radius: 3px;
+                background-color: rgba(0, 0, 0, 0.06);
+                font-size: 0.9em;
+            }
+        }
+
+        &.o_role_user .o_ai_chat_text code {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        &.o_role_user {
+            justify-content: flex-end;
+
+            .o_ai_chat_bubble {
+                background-color: #714b67;
+                color: #fff;
+            }
+        }
+
+        &.o_role_assistant .o_ai_chat_bubble,
+        &.o_role_system .o_ai_chat_bubble {
+            background-color: #fff;
+        }
+    }
+
+    .o_ai_chat_result {
+        max-width: 100%;
+        overflow-x: auto;
+
+        table.table {
+            width: auto;
+            margin-bottom: 0;
+            font-size: 12px;
+        }
+
+        th,
+        td {
+            white-space: nowrap;
+        }
+
+        th.o_num,
+        td.o_num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        td.o_label {
+            white-space: normal;
+            max-width: 260px;
+        }
+    }
+
+    .o_ai_chat_input textarea {
+        resize: none;
+    }
+}

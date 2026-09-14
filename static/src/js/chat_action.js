@@ -1,0 +1,162 @@
+/** @odoo-module **/
+
+import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
+import { Component, useState, useRef, onWillStart, onPatched, markup } from "@odoo/owl";
+
+/**
+ * Markdown mínimo -> HTML, para lo que realmente devuelve el modelo:
+ * negrita, cursiva, `código`, viñetas y encabezados.
+ *
+ * El texto incluye datos de la base (nombres de productos, clientes...), así
+ * que se ESCAPA primero y solo después se inyectan las etiquetas que genera
+ * esta función. Nunca se vuelca HTML venido del modelo o de la BD.
+ */
+function renderMarkdown(text) {
+    const escaped = String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const html = escaped
+        // Encabezados "### Titulo" -> negrita (evita mostrar las almohadillas).
+        .replace(/^#{1,6}[ \t]+(.*)$/gm, "<strong>$1</strong>")
+        // Viñetas "* item" / "- item" al principio de línea.
+        .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
+        // `código`
+        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+        // **negrita** y __negrita__ (antes que la cursiva, si no se la come).
+        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+        // *cursiva* y _cursiva_
+        .replace(/(^|[^*\w])\*([^*\n]+)\*(?![*\w])/g, "$1<em>$2</em>")
+        .replace(/(^|[^_\w])_([^_\n]+)_(?![_\w])/g, "$1<em>$2</em>");
+
+    return markup(html);
+}
+
+export class AiDataChat extends Component {
+    setup() {
+        this.rpc = useService("rpc");
+        this.notification = useService("notification");
+        this.threadRef = useRef("thread");
+        this.state = useState({
+            sessions: [],
+            activeId: null,
+            messages: [],
+            input: "",
+            loading: false,
+        });
+
+        onWillStart(async () => {
+            await this.loadSessions();
+            if (this.state.sessions.length) {
+                await this.selectSession(this.state.sessions[0].id);
+            } else {
+                await this.newSession();
+            }
+        });
+
+        onPatched(() => this.scrollToBottom());
+    }
+
+    scrollToBottom() {
+        const el = this.threadRef.el;
+        if (el) {
+            el.scrollTop = el.scrollHeight;
+        }
+    }
+
+    async loadSessions() {
+        const res = await this.rpc("/ai_data_chat/sessions");
+        this.state.sessions = res.sessions || [];
+    }
+
+    async selectSession(sessionId) {
+        this.state.activeId = sessionId;
+        const data = await this.rpc(`/ai_data_chat/session/${sessionId}/messages`);
+        this.state.messages = data.messages || [];
+    }
+
+    async newSession() {
+        const data = await this.rpc("/ai_data_chat/session/new", {});
+        await this.loadSessions();
+        this.state.activeId = data.session_id;
+        this.state.messages = data.messages || [];
+    }
+
+    async send(text) {
+        const message = (text ?? this.state.input).trim();
+        if (!message || this.state.loading || !this.state.activeId) {
+            return;
+        }
+        this.state.input = "";
+        this.state.loading = true;
+        try {
+            const res = await this.rpc(
+                `/ai_data_chat/session/${this.state.activeId}/ask`,
+                { message }
+            );
+            if (res.error) {
+                this.notification.add(res.error, { type: "danger" });
+                return;
+            }
+            this.state.messages.push(...(res.messages || []));
+            await this.loadSessions();
+        } finally {
+            this.state.loading = false;
+        }
+    }
+
+    onInputKeydown(ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+            ev.preventDefault();
+            this.send();
+        }
+    }
+
+    // --- Helpers de render -------------------------------------------
+    formatContent(message) {
+        return renderMarkdown(message.content);
+    }
+
+    resultRows(message) {
+        const r = message.tool_result;
+        if (!r || !r.ok || !Array.isArray(r.rows) || !r.rows.length) {
+            return null;
+        }
+        const rows = r.rows.slice(0, 15);
+        const labels = r.labels || {};
+        const columns = Object.keys(rows[0])
+            .filter((k) => k !== "__count")
+            .map((key, index) => ({
+                key,
+                label: labels[key] || key,
+                numeric: rows.some((row) => typeof row[key] === "number"),
+                isLabel: index === 0,
+            }));
+        return { columns, rows };
+    }
+
+    cell(value, column) {
+        if (value === null || value === undefined) {
+            return "—";
+        }
+        if (typeof value === "object") {
+            return value.name ?? value.id ?? JSON.stringify(value);
+        }
+        if (typeof value === "number") {
+            const isCount =
+                column && (column.key === "__count" || column.key.endsWith("_count"));
+            return value.toLocaleString("en-US", {
+                minimumFractionDigits: isCount ? 0 : 2,
+                maximumFractionDigits: isCount ? 0 : 2,
+            });
+        }
+        return value;
+    }
+}
+
+AiDataChat.template = "ai_data_chat.ChatAction";
+
+registry.category("actions").add("ai_data_chat.chat", AiDataChat);

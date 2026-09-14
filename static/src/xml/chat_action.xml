@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <t t-name="ai_data_chat.ChatAction">
+        <div class="o_ai_chat d-flex h-100">
+
+            <!-- Barra lateral: conversaciones -->
+            <div class="o_ai_chat_sidebar d-flex flex-column border-end">
+                <div class="p-2 border-bottom">
+                    <button class="btn btn-primary w-100" t-on-click="() => this.newSession()">
+                        <i class="fa fa-plus me-1"/> Nueva conversación
+                    </button>
+                </div>
+                <div class="flex-grow-1 overflow-auto">
+                    <t t-foreach="state.sessions" t-as="s" t-key="s.id">
+                        <div class="o_ai_chat_session_item p-2 border-bottom"
+                             t-att-class="{ 'o_active': s.id === state.activeId }"
+                             t-on-click="() => this.selectSession(s.id)">
+                            <div class="text-truncate fw-bold" t-esc="s.name"/>
+                            <small class="text-muted">
+                                <span t-esc="s.message_count"/> mensajes
+                                <t t-if="s.state === 'closed'"> · cerrada</t>
+                            </small>
+                        </div>
+                    </t>
+                </div>
+            </div>
+
+            <!-- Panel principal -->
+            <div class="o_ai_chat_main d-flex flex-column flex-grow-1">
+
+                <div class="o_ai_chat_thread flex-grow-1 overflow-auto p-3" t-ref="thread">
+                    <t t-if="!state.messages.length">
+                        <div class="text-muted text-center mt-5">
+                            Escribe una pregunta sobre tus datos de Ventas, Compras, Contactos o Productos.
+                        </div>
+                    </t>
+                    <t t-foreach="state.messages" t-as="m" t-key="m.id">
+                        <div class="o_ai_chat_msg mb-3" t-att-class="'o_role_' + m.role">
+                            <div class="o_ai_chat_bubble">
+                                <div class="o_ai_chat_text" t-out="formatContent(m)"/>
+
+                                <t t-set="table" t-value="resultRows(m)"/>
+                                <div t-if="table" class="o_ai_chat_result mt-2">
+                                    <table class="table table-sm table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th t-foreach="table.columns" t-as="c" t-key="c.key"
+                                                    t-att-class="{ o_num: c.numeric and !c.isLabel, o_label: c.isLabel }"
+                                                    t-esc="c.label"/>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr t-foreach="table.rows" t-as="row" t-key="row_index">
+                                                <td t-foreach="table.columns" t-as="c" t-key="c.key"
+                                                    t-att-class="{ o_num: c.numeric and !c.isLabel, o_label: c.isLabel }"
+                                                    t-esc="cell(row[c.key], c)"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div t-if="m.tool_name" class="o_ai_chat_meta text-muted mt-1">
+                                    <small>
+                                        <i class="fa fa-wrench me-1"/>
+                                        <t t-esc="m.tool_name"/>
+                                        <t t-if="m.status === 'error'"> · error</t>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Entrada -->
+                <div class="o_ai_chat_input d-flex align-items-end gap-2 p-3">
+                    <textarea class="form-control" rows="2"
+                              placeholder="Escribe tu pregunta…  (Enter para enviar)"
+                              t-model="state.input"
+                              t-on-keydown="onInputKeydown"/>
+                    <button class="btn btn-primary"
+                            t-att-disabled="state.loading || !state.input.trim()"
+                            t-on-click="() => this.send()">
+                        <t t-if="state.loading"><i class="fa fa-spinner fa-spin"/></t>
+                        <t t-else="">Enviar</t>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </t>
+
+</templates>
