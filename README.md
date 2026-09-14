@@ -1,91 +1,156 @@
-# AI Data Chat — Capa de datos
+# AI Data Chat — asistente de consultas para Odoo 17
 
-Herramientas de **solo lectura** que traducen peticiones estructuradas
-(`{tool, params}`) en consultas al ORM de Odoo. El cliente LLM habla la API
-de **OpenAI Chat Completions**, así que funciona con cualquier proveedor que
-la exponga —Gemini (Google AI Studio), OpenRouter, OpenAI...— sin tocar
-código: se elige con `AI_DATA_CHAT_PROVIDER` en el `.env`.
+Módulo de Odoo que añade un **chat para preguntar por los datos del ERP en
+lenguaje natural**. En vez de buscar el informe adecuado y configurar sus
+filtros, se escribe la pregunta y el asistente responde con la cifra y una
+tabla de apoyo.
 
-## Estado
+Está pensado para una distribuidora mayorista (el ejemplo del que nace es una
+droguería que suministra a farmacias), pero el catálogo de datos es
+configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 
-| Componente | Estado |
-|---|---|
-| `services/date_utils.py` — periodos relativos → rangos de fecha | ✅ |
-| `services/schema_catalog.py` — catálogo blanco (modelos, campos, operadores, medidas) | ✅ |
-| `services/query_tools.py` — `aggregate` (read_group) y `query_records` (search_read) | ✅ |
-| `services/tool_dispatcher.py` — punto de entrada único `run_tool(env, tool, params)` | ✅ |
-| `models/ai_chat_session` + `ai_chat_message` — persistencia de conversaciones | ✅ |
-| `models/ai_chat_responder` — responder conmutable (`manual` / `llm`) | ✅ |
-| `controllers/main.py` — endpoints JSON para la UI | ✅ |
-| `static/src` — acción cliente OWL (chat) | ✅ |
-| `views/` — menús + vistas backend de respaldo | ✅ |
-| `services/config.py` — carga `.env` / entorno / `ir.config_parameter` | ✅ |
-| `services/llm_prompt.py` — system prompt + esquemas de herramientas (formato OpenAI) | ✅ |
-| `services/llm_client.py` — `LLMClient` (Chat Completions) + bucle de tool-calling | ✅ |
-| `_respond_llm` conectado al cliente | ✅ |
-| `tests/` — 59 tests (datos, preguntas objetivo de Ventas y Compras, flujo de chat, reglas de registro, cliente LLM con transporte simulado) | ✅ |
-| Prueba real contra la API del proveedor | ✅ validado en vivo con Gemini |
+> **Solo lectura.** El módulo no puede crear, modificar ni borrar nada en
+> Odoo, y cada usuario obtiene únicamente los datos a los que ya tiene
+> acceso.
 
-## Configuración (`.env`)
+## Qué tipo de preguntas responde
 
-Copia `.env.example` a `.env` (junto al módulo) y pega la clave:
+**Ventas**
+
+- ¿Cuál es el artículo con más ventas en los últimos 3 meses?
+- ¿Cuántos clientes han hecho pedidos en los últimos 10 días?
+- ¿Qué cliente nos ha comprado más (en importe) este trimestre?
+- ¿Qué presupuestos están pendientes de confirmar y por qué importe?
+- ¿Cuánto hemos vendido este mes y cuál es el ticket medio por pedido?
+
+**Compras**
+
+- ¿A qué proveedor le hemos comprado más este trimestre?
+- ¿Qué productos hemos comprado más en los últimos 3 meses, por importe?
+- ¿Qué solicitudes de presupuesto de compra están pendientes y por cuánto?
+
+Distingue por sí solo de qué lado del negocio se habla: en *"¿qué cliente nos
+ha comprado más y a qué proveedor le compramos más nosotros?"* consulta los
+modelos de venta y los de compra en la misma respuesta.
+
+## Requisitos
+
+- **Odoo 17 Community** (o Enterprise)
+- Módulos de Odoo: `sale`, `purchase`, `web` (se instalan como dependencia)
+- Una API key de un proveedor LLM compatible con la API de *OpenAI Chat
+  Completions*: **Gemini** (Google AI Studio), **OpenRouter** u **OpenAI**
+
+Sin dependencias de Python adicionales: el cliente HTTP usa `urllib` de la
+librería estándar.
+
+## Instalación
+
+```bash
+# 1. Clonar dentro de tu carpeta de addons
+cd /ruta/a/tus/addons
+git clone https://github.com/Hjanner/ai_data_chat.git
+
+# 2. Asegurarte de que esa carpeta está en addons_path (odoo.conf)
+#    addons_path = /ruta/a/odoo/addons,/ruta/a/tus/addons
+
+# 3. Instalar el módulo
+odoo-bin -d <BASE_DE_DATOS> -i ai_data_chat --stop-after-init
+```
+
+Después, en Odoo: activar el modo desarrollador → *Aplicaciones* →
+*Actualizar lista de aplicaciones* si no aparece.
+
+## Configuración
+
+Copia `.env.example` a `.env` (junto al módulo) y rellena la clave:
+
+```ini
+AI_DATA_CHAT_PROVIDER=gemini          # gemini | openrouter | openai
+AI_DATA_CHAT_API_KEY=tu_api_key
+AI_DATA_CHAT_MODEL=gemini-3.6-flash   # opcional: cada proveedor trae uno por defecto
+AI_DATA_CHAT_RESPONDER_MODE=llm       # manual | llm
+```
+
+`.env` está en `.gitignore`: **no subas tu clave al repositorio.**
+
+**Orden de precedencia** (de mayor a menor):
+
+1. `ir.config_parameter` — *Ajustes → Técnico → Parámetros del sistema*
+   (`ai_data_chat.provider`, `ai_data_chat.api_key`, `ai_data_chat.model`,
+   `ai_data_chat.responder_mode`…)
+2. Variable de entorno del proceso de Odoo
+3. Fichero `.env`
+4. Preset del proveedor
+
+En producción se recomienda `ir.config_parameter` o variables de entorno; el
+`.env` es la vía cómoda para desarrollo.
+
+### Cambiar de proveedor
+
+Cada proveedor tiene un preset en `services/config.py: PROVIDER_PRESETS` que
+fija su `base_url` y su modelo por defecto. Pasar de Gemini a OpenRouter es
+cambiar dos líneas del `.env` (`AI_DATA_CHAT_PROVIDER` y la API key), sin
+tocar código. Para un endpoint distinto —un proxy o un modelo autoalojado—
+existe `AI_DATA_CHAT_BASE_URL`.
+
+## Uso
+
+Menú **Asistente de datos → Asistente**.
+
+Barra lateral con el historial de conversaciones, hilo de mensajes y caja de
+texto. Las respuestas del modelo se muestran con su formato (negrita,
+cursiva, `código`, viñetas) y, cuando la consulta devuelve filas, con una
+tabla de columnas traducidas al español.
+
+En **Asistente de datos → Conversaciones** hay una vista de respaldo con
+todas las conversaciones y la traza técnica de cada mensaje: qué herramienta
+se ejecutó, con qué parámetros, qué devolvió y cuántos tokens costó.
+
+### Modo `manual` (sin IA)
+
+Con `AI_DATA_CHAT_RESPONDER_MODE=manual` el chat no interpreta lenguaje
+natural: solo acepta una llamada de herramienta en JSON. Sirve para probar la
+capa de datos sin gastar API:
+
+```json
+{"tool": "query_records", "params": {"model": "sale.order", "fields": ["name", "amount_total"], "limit": 5}}
+```
+
+También se puede ejercitar desde `odoo-bin shell`:
+
+```bash
+odoo-bin shell -d <BASE_DE_DATOS> --shell-interface=python < tools/run_tool.py
+# luego:  demo()   /   t("aggregate", model="sale.order", ...)   /   catalog()
+```
+
+## Cómo funciona
+
+El modelo de lenguaje **nunca escribe SQL ni toca el ORM**. Solo elige una de
+dos herramientas y rellena sus parámetros; el módulo los valida contra un
+catálogo blanco antes de ejecutar nada.
 
 ```
-AI_DATA_CHAT_PROVIDER=gemini
-AI_DATA_CHAT_API_KEY=...           # de Google AI Studio
-AI_DATA_CHAT_MODEL=gemini-3.6-flash
-AI_DATA_CHAT_RESPONDER_MODE=llm
+Pregunta → LLM → {tool, params} → validación (catálogo) → ORM de Odoo
+                                                             ↓
+        Respuesta redactada ← LLM ← resultado (filas + etiquetas)
 ```
 
-Proveedores soportados vía presets (`services/config.py: PROVIDER_PRESETS`):
-`gemini` (Google AI Studio), `openrouter`, `openai`. Cada uno fija su
-`base_url` y modelo por defecto; se pueden pisar con `AI_DATA_CHAT_BASE_URL` /
-`AI_DATA_CHAT_MODEL`. Cambiar de Gemini a OpenRouter cuando esté pagado es
-solo cambiar `AI_DATA_CHAT_PROVIDER` + `AI_DATA_CHAT_API_KEY` en el `.env`.
+### Las dos herramientas
 
-`.env` está en `.gitignore`. Precedencia: `ir.config_parameter` >
-variable de entorno > `.env` > preset del proveedor. En producción se usa
-`ir.config_parameter` (Ajustes → Técnico → Parámetros del sistema):
-`ai_data_chat.provider`, `ai_data_chat.api_key`, `ai_data_chat.model`,
-`ai_data_chat.responder_mode`, etc.
-
-## Modo del responder
-
-`ai_data_chat.responder_mode` (o `AI_DATA_CHAT_RESPONDER_MODE` en `.env`):
-
-- `manual` (por defecto) — sin IA, no interpreta lenguaje natural. Solo
-  acepta una llamada de herramienta en JSON (`{"tool": ..., "params": ...}`);
-  cualquier otra cosa devuelve un mensaje de ayuda.
-- `llm` — usa el proveedor configurado. `AiChatResponder._respond_llm`
-  construye el system prompt (`llm_prompt`), pasa hasta 10 mensajes de
-  historial y delega en `LLMClient.answer()`, que ejecuta el bucle de
-  tool-calling (`aggregate` / `query_records`) hasta `max_tool_iterations`
-  y devuelve el texto final + traza de herramientas + tokens.
-
-## UI
-
-Menú **Asistente de datos → Asistente** (acción cliente `ai_data_chat.chat`).
-Barra lateral de conversaciones + hilo de mensajes + caja de texto. El
-Markdown que devuelve el modelo (negrita, cursiva, `código`, viñetas) se
-renderiza escapando antes el HTML. Las consultas corren con los permisos del
-usuario; quien no tenga acceso a Ventas o Compras recibe un error controlado.
-
-## Herramientas
-
-### `aggregate` — rankings, KPIs, conteos → `read_group`
+**`aggregate`** — rankings, KPIs y conteos → `read_group`
 
 ```python
 run_tool(env, "aggregate", {
     "model": "sale.order.line",
-    "group_by": ["product_id"],                 # [] = KPI global
+    "group_by": ["product_id"],                  # [] = KPI global sin agrupar
     "measures": ["price_subtotal:sum", "product_uom_qty:sum"],
     "period": {"field": "order_id.date_order", "name": "last_3_months"},
-    "order": "price_subtotal_sum desc",          # alias = <campo>_<agg>
+    "order": "price_subtotal_sum desc",          # alias de medida = <campo>_<agg>
     "limit": 1,
 })
 ```
 
-### `query_records` — listados filtrados → `search_read`
+**`query_records`** — listados filtrados → `search_read`
 
 ```python
 run_tool(env, "query_records", {
@@ -97,82 +162,84 @@ run_tool(env, "query_records", {
 })
 ```
 
-## Garantías de seguridad
-
-- Solo los modelos/campos/operadores/medidas del `CATALOG` llegan al ORM.
-- Las consultas corren con el `env` del usuario → se respetan ACL y reglas
-  de registro. Nunca se usa `sudo` para elevar privilegios.
-- `limit` tiene tope duro (`MAX_LIMIT = 200`).
-- Solo lectura: no hay ninguna ruta de escritura.
-- El `tool_dispatcher` nunca propaga excepciones: devuelve `{"ok": False, "error": ...}`.
-
-## Periodos aceptados
+### Periodos aceptados
 
 `today`, `yesterday`, `this_week`, `this_month`, `last_month`,
 `this_quarter`, `last_quarter`, `this_year`,
 `last_<n>_days`, `last_<n>_weeks`, `last_<n>_months`, `last_<n>_years`.
 
-Las fechas las calcula `date_utils`, **nunca el LLM**.
+Las fechas las calcula el módulo (`services/date_utils.py`), **nunca el
+LLM**: el modelo solo nombra el periodo.
 
-## Probar
+## Garantías de seguridad
 
-### Tests automáticos
+- **Catálogo blanco**: solo los modelos, campos, operadores y medidas
+  declarados en `services/schema_catalog.py` llegan al ORM. Cualquier otra
+  cosa se rechaza antes de ejecutarse.
+- **Permisos del usuario**: las consultas corren con el `env` de quien
+  pregunta, así que se respetan las ACL y las reglas de registro de Odoo.
+  Nunca se usa `sudo` para elevar privilegios.
+- **Solo lectura**: no existe ninguna ruta de escritura en el módulo.
+- **Tope de filas**: `limit` tiene un máximo duro (`MAX_LIMIT = 200`).
+- **Conversaciones privadas**: cada usuario ve únicamente las suyas
+  (reglas de registro en `security/`).
+- **Sin HTML inyectable**: el texto del modelo se escapa antes de renderizar
+  su formato, porque puede contener datos de la base.
+- **Errores controlados**: el despachador nunca propaga excepciones; devuelve
+  `{"ok": false, "error": ...}` para que el chat pueda explicarlo.
 
-```bash
-# batería normal (excluye el smoke de navegador)
-./odoo/odoo-bin -c ~/.odoorc -d odoo_migracion_test -u ai_data_chat \
-    --test-enable --test-tags 'ai_data_chat,-ai_data_chat_ui' --stop-after-init
+> ⚠️ **Privacidad**: para responder, las preguntas y los datos consultados se
+> envían al proveedor LLM que configures. Revisa su política de tratamiento
+> de datos antes de usarlo con información real de clientes.
 
-# smoke de la UI OWL con Chrome (requiere websocket-client y un Chrome compatible)
-./odoo/odoo-bin -c ~/.odoorc -d odoo_migracion_test \
-    --test-enable --test-tags ai_data_chat_ui --stop-after-init
-```
+## Alcance de los datos
 
-### A mano (haciendo de LLM)
+| Área | Modelos |
+|---|---|
+| Ventas | `sale.order`, `sale.order.line` |
+| Compras | `purchase.order`, `purchase.order.line` |
+| Contactos | `res.partner` |
+| Productos | `product.product` |
 
-```bash
-./odoo/odoo-bin shell -c ~/.odoorc -d odoo_migracion_test --shell-interface=python \
-    < custom_addons/ai_data_chat/tools/run_tool.py
-# luego: demo()   /   t("aggregate", model="sale.order", ...)   /   catalog()
-```
+Ampliar el alcance es añadir una entrada al `CATALOG` de
+`services/schema_catalog.py` con los campos filtrables, agrupables, medibles
+y devolvibles de cada modelo nuevo.
 
-## Preguntas objetivo (criterio de "funciona")
+### Compras no es un calco de Ventas
 
-Viven como tests en `tests/test_target_questions.py`, contrastadas contra SQL
-de control calculado en tiempo de ejecución.
-
-**Ventas (Q1–Q5)**
-
-1. ¿Cuál es el artículo con más ventas en los últimos 3 meses?
-2. ¿Cuántas farmacias han hecho pedidos en los últimos 10 días?
-3. ¿Qué farmacia nos ha comprado más (en importe) este trimestre?
-4. ¿Qué presupuestos están pendientes de confirmar y por qué importe?
-5. ¿Cuánto hemos vendido este mes y cuál es el ticket medio por pedido?
-
-**Compras (C1–C3)**
-
-1. ¿A qué proveedor le hemos comprado más este trimestre?
-2. ¿Qué productos hemos comprado más en los últimos 3 meses, por importe?
-3. ¿Qué solicitudes de presupuesto de compra están pendientes y por cuánto?
-
-## Compras: diferencias frente a Ventas
-
-Al añadir `purchase.order` / `purchase.order.line` hay tres trampas que el
-catálogo ya contempla:
+Tres diferencias que el catálogo ya contempla, y que conviene conocer si
+amplías el módulo:
 
 | | Ventas | Compras |
 |---|---|---|
 | Estado confirmado | `sale` | **`purchase`** |
 | Cantidad pedida | `product_uom_qty` | **`product_qty`** |
-| `partner_id` significa | Cliente (farmacia) | **Proveedor** |
+| Qué es `partner_id` | Cliente | **Proveedor** |
 
-Por eso `column_label()` acepta un `model`: las etiquetas admiten overrides
-por modelo (`CATALOG[modelo]["labels"]`), y el mismo `partner_id` se muestra
-como "Cliente" en ventas y "Proveedor" en compras.
+Por eso las etiquetas admiten *overrides* por modelo
+(`CATALOG[modelo]["labels"]`): el mismo `partner_id` se muestra como
+"Cliente" en ventas y como "Proveedor" en compras.
 
 ### Fuera de alcance por ahora
 
-*"¿Qué pedidos de compra están pendientes de recibir?"* no se puede expresar:
-requiere comparar dos campos entre sí (`qty_received < product_qty`) y los
-dominios de Odoo solo comparan campo contra valor. Necesitaría una
-herramienta nueva.
+*"¿Qué pedidos de compra están pendientes de recibir?"* no puede expresarse
+con las herramientas actuales: requiere comparar dos campos entre sí
+(`qty_received < product_qty`) y los dominios de Odoo solo comparan un campo
+contra un valor. Necesitaría una herramienta nueva.
+
+## Estructura
+
+```
+ai_data_chat/
+├── models/          ai.chat.session, ai.chat.message, ai.chat.responder
+├── services/        catálogo, herramientas, periodos, prompt y cliente LLM
+├── controllers/     endpoints JSON que consume la interfaz
+├── static/src/      acción cliente OWL (chat)
+├── views/           menús y vistas backend de respaldo
+├── security/        permisos y reglas de registro
+└── tools/           utilidades para probar desde odoo-bin shell
+```
+
+## Licencia
+
+LGPL-3. Ver el fichero [LICENSE](LICENSE).

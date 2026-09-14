@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """Probar la capa de datos a mano, sin LLM.
 
-Uso:
+Uso (sustituye <BD> por tu base de datos y <RUTA> por la ruta al modulo):
 
-    ./odoo/odoo-bin shell -c ~/.odoorc -d odoo_migracion_test \
-        --shell-interface=python < custom_addons/ai_data_chat/tools/run_tool.py
+    odoo-bin shell -d <BD> --shell-interface=python < <RUTA>/tools/run_tool.py
 
 o, dentro de `odoo-bin shell`:
 
-    >>> exec(open('custom_addons/ai_data_chat/tools/run_tool.py').read())
+    >>> exec(open('<RUTA>/tools/run_tool.py').read())
 
-Define `demo()` (las 5 preguntas objetivo) y `t(tool, **params)` (atajo).
-`env` lo inyecta el propio shell de Odoo.
+Define `demo()` (ejecuta las preguntas de ejemplo de Ventas y Compras),
+`t(tool, **params)` (atajo para una llamada suelta) y `catalog()` (imprime
+el catalogo y las herramientas). `env` lo inyecta el propio shell de Odoo.
 """
 import json
 import pprint
