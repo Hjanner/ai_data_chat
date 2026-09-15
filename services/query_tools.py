@@ -45,6 +45,42 @@ def _apply_period(domain, period):
     return list(domain) + leaves
 
 
+# Campos que "cubren" a otro a efectos del filtro por defecto: si la peticion
+# filtra por `order_id.state`, ya esta hablando del estado y no hay que
+# imponer el nuestro.
+_DEFAULT_EQUIVALENTS = {
+    "state": ("state", "order_id.state"),
+}
+
+
+def _domain_fields(domain):
+    return {
+        element[0]
+        for element in domain
+        if isinstance(element, (list, tuple)) and len(element) == 3
+        and isinstance(element[0], str)
+    }
+
+
+def _apply_default_domain(cfg, domain):
+    """Anade los leaves del filtro por defecto que la peticion no contradice.
+
+    Leaf a leaf: pedir recepciones ya hechas desactiva el filtro de estado,
+    pero no el de "solo entradas".
+    """
+    default = cfg.get("default_domain") or []
+    if not default:
+        return domain
+    asked = _domain_fields(domain)
+    missing = []
+    for leaf in default:
+        field = leaf[0]
+        equivalents = _DEFAULT_EQUIVALENTS.get(field, (field,))
+        if not asked.intersection(equivalents):
+            missing.append(leaf)
+    return list(missing) + list(domain)
+
+
 def _split_order(order):
     """'amount_total desc' -> ('amount_total', True).  None -> (None, False)."""
     if not order or not isinstance(order, str):
@@ -74,13 +110,7 @@ def aggregate(env, model, group_by, measures, domain=None, period=None,
     domain = _apply_period(domain, period)
     domain = cat.validate_domain(model, domain)
 
-    # Estado por defecto (solo si la peticion no filtra ya por 'state').
-    touches_state = any(
-        isinstance(e, (list, tuple)) and len(e) == 3 and e[0] in ("state", "order_id.state")
-        for e in domain
-    )
-    if not touches_state and cfg["default_domain"]:
-        domain = list(cfg["default_domain"]) + domain
+    domain = _apply_default_domain(cfg, domain)
 
     # Campos read_group: 'alias:agg(campo)' evita colisiones de nombre.
     rg_fields = [
@@ -143,12 +173,7 @@ def query_records(env, model, fields, domain=None, period=None,
     domain = _apply_period(domain, period)
     domain = cat.validate_domain(model, domain)
 
-    touches_state = any(
-        isinstance(e, (list, tuple)) and len(e) == 3 and e[0] in ("state", "order_id.state")
-        for e in domain
-    )
-    if not touches_state and cfg["default_domain"]:
-        domain = list(cfg["default_domain"]) + domain
+    domain = _apply_default_domain(cfg, domain)
 
     limit = cat.clamp_limit(limit)
 

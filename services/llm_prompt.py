@@ -20,6 +20,12 @@ _BUSINESS_CONTEXT = (
     "- VENTAS (lo que la droguería vende a las farmacias): modelos `sale.order` "
     "y `sale.order.line`. Ahí, \"cliente\" o \"farmacia\" = el contacto del "
     "campo partner_id. Estado confirmado: 'sale'; presupuesto: 'draft'/'sent'.\n"
+    "- RECEPCIONES (la mercancía que los proveedores tienen que entregar en el "
+    "almacén): modelo `stock.picking`. Es lo que responde \"qué está pendiente "
+    "de recibir\", \"qué está atrasado\" (periodo `until_now` sobre "
+    "`scheduled_date`) y \"qué llega la semana que viene\" (`next_7_days`). "
+    "Un pedido de compra confirmado no significa que la mercancía haya "
+    "llegado: eso lo dice la recepción, no el pedido.\n"
     "- COMPRAS (lo que la droguería compra a sus proveedores, laboratorios o "
     "distribuidores): modelos `purchase.order` y `purchase.order.line`. Ahí "
     "partner_id es el PROVEEDOR, no el cliente. Estado confirmado: 'purchase'; "
@@ -119,6 +125,8 @@ def build_system_prompt(env=None):
             lines.append("    agrupar por: %s" % ", ".join(cfg["group_by"]))
         if cfg["measures"]:
             lines.append("    medir (sum/avg/min/max): %s" % ", ".join(cfg["measures"]))
+        else:
+            lines.append("    medir: no tiene importes; solo contar, con 'name:count'")
         lines.append("    devolver (query_records): %s" % ", ".join(cfg["output"]))
         if cfg["default_domain"]:
             lines.append("    filtro por defecto aplicado: %s" % cfg["default_domain"])

@@ -110,6 +110,45 @@ EXAMPLE_QUESTIONS = [
             "limit": 50,
         },
     },
+    # --- Recepciones ---------------------------------------------------
+    {
+        "key": "r1",
+        "label": "¿Cuántas recepciones tengo pendientes y de qué proveedores?",
+        "tool": "aggregate",
+        "params": {
+            "model": "stock.picking",
+            "group_by": ["partner_id"],
+            # stock.picking no tiene importes: solo se cuenta.
+            "measures": ["name:count"],
+            "order": "name_count desc",
+        },
+    },
+    {
+        "key": "r2",
+        "label": "¿Qué recepciones están atrasadas?",
+        "tool": "query_records",
+        "params": {
+            "model": "stock.picking",
+            "fields": ["name", "partner_id", "scheduled_date", "state", "origin"],
+            # 'atrasado' = fecha prevista ya pasada. Que siga pendiente lo pone
+            # el filtro por defecto del catálogo.
+            "period": {"field": "scheduled_date", "name": "until_now"},
+            "order": "scheduled_date asc",
+            "limit": 50,
+        },
+    },
+    {
+        "key": "r3",
+        "label": "¿Qué recepciones llegan en los próximos 15 días?",
+        "tool": "query_records",
+        "params": {
+            "model": "stock.picking",
+            "fields": ["name", "partner_id", "scheduled_date", "origin"],
+            "period": {"field": "scheduled_date", "name": "next_15_days"},
+            "order": "scheduled_date asc",
+            "limit": 50,
+        },
+    },
 ]
 
 

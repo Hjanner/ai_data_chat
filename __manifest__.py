@@ -13,6 +13,8 @@ estructuradas ({tool, params}) en llamadas al ORM de Odoo:
     - aggregate(...)       -> read_group (rankings, KPIs, conteos)
     - query_records(...)   -> search_read (listados filtrados)
 
+    Alcance de datos: Ventas, Compras, Recepciones, Contactos y Productos.
+
     Escritura (requiere el grupo 'Asistente de datos / Escritura'):
     - describe_create(...) -> que campos hacen falta para un alta
     - propose_create(...)  -> prepara un alta   (NO escribe)
@@ -34,7 +36,7 @@ del modulo o el parametro de sistema 'ai_data_chat.provider'.
     """,
     'author': "Dromax",
     'category': 'Productivity',
-    'version': '17.0.1.2.0',
+    'version': '17.0.1.3.0',
     'license': 'LGPL-3',
     'application': False,
     'installable': True,
@@ -42,6 +44,10 @@ del modulo o el parametro de sistema 'ai_data_chat.provider'.
         'base',
         'sale',
         'purchase',
+        # Para las recepciones (stock.picking). OJO: `purchase` NO depende de
+        # `stock` en Odoo, el puente es `purchase_stock`; declararlo aqui hace
+        # que el almacen se instale con el modulo.
+        'stock',
         'web',
     ],
     'data': [

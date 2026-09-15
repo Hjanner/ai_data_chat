@@ -31,6 +31,15 @@ configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 - ¿Qué productos hemos comprado más en los últimos 3 meses, por importe?
 - ¿Qué solicitudes de presupuesto de compra están pendientes y por cuánto?
 
+**Recepciones**
+
+- ¿Qué tengo pendiente de recibir y de qué proveedores?
+- ¿Qué recepciones están atrasadas?
+- ¿Qué llega en los próximos 15 días? ¿Llega algo de [proveedor] este mes?
+
+Un pedido de compra confirmado no significa que la mercancía haya llegado: eso
+lo dice la recepción (`stock.picking`), no el pedido.
+
 Distingue por sí solo de qué lado del negocio se habla: en *"¿qué cliente nos
 ha comprado más y a qué proveedor le compramos más nosotros?"* consulta los
 modelos de venta y los de compra en la misma respuesta.
@@ -78,7 +87,8 @@ valor anterior, así que lo devuelve a como estaba. Dos límites deliberados:
 ## Requisitos
 
 - **Odoo 17 Community** (o Enterprise)
-- Módulos de Odoo: `sale`, `purchase`, `web` (se instalan como dependencia)
+- Módulos de Odoo: `sale`, `purchase`, `stock`, `web` (se instalan como
+  dependencia; `stock` hace falta para las recepciones)
 - Una API key de un proveedor LLM compatible con la API de *OpenAI Chat
   Completions*: **Gemini** (Google AI Studio), **OpenRouter** u **OpenAI**
 
@@ -229,9 +239,14 @@ interfaz.
 
 ### Periodos aceptados
 
-`today`, `yesterday`, `this_week`, `this_month`, `last_month`,
-`this_quarter`, `last_quarter`, `this_year`,
-`last_<n>_days`, `last_<n>_weeks`, `last_<n>_months`, `last_<n>_years`.
+Hacia atrás: `today`, `yesterday`, `this_week`, `this_month`, `last_month`,
+`this_quarter`, `last_quarter`, `this_year`, `last_<n>_días|semanas|meses|años`.
+
+Hacia adelante: `tomorrow`, `next_week`, `next_month`, `next_quarter`,
+`next_<n>_días|semanas|meses|años`.
+
+Abiertos por un extremo: `until_now` (todo lo anterior a este momento — es lo
+que significa "atrasado"), `until_today`, `from_now`, `from_today`.
 
 Las fechas las calcula el módulo (`services/date_utils.py`), **nunca el
 LLM**: el modelo solo nombra el periodo.
@@ -278,6 +293,7 @@ LLM**: el modelo solo nombra el periodo.
 |---|---|
 | Ventas | `sale.order`, `sale.order.line` |
 | Compras | `purchase.order`, `purchase.order.line` |
+| Recepciones | `stock.picking` (solo entradas) |
 | Contactos | `res.partner` |
 | Productos | `product.product`, `product.template` (altas) |
 
@@ -300,12 +316,27 @@ Por eso las etiquetas admiten *overrides* por modelo
 (`CATALOG[modelo]["labels"]`): el mismo `partner_id` se muestra como
 "Cliente" en ventas y como "Proveedor" en compras.
 
+### Recepciones: solo entradas, a propósito
+
+`stock.picking` sirve tanto para lo que entra como para lo que sale, pero el
+catálogo lo acota a las entradas: `picking_type_code` **no es filtrable**, así
+que el filtro de "solo recepciones" no se puede desactivar desde la petición.
+Gracias a eso, `partner_id` significa siempre *Proveedor* aquí. Lo que sale
+hacia las farmacias se consulta por `sale.order`.
+
+El filtro por defecto se aplica **leaf a leaf**: preguntar por las recepciones
+ya hechas desactiva el filtro de estado, pero no el de "solo entradas".
+
+> Esto sustituye al hueco que el módulo tenía antes. *"¿Qué está pendiente de
+> recibir?"* parecía inviable porque exigía comparar `qty_received` contra
+> `product_qty`, y los dominios de Odoo no comparan dos campos entre sí. La
+> respuesta estaba en otro sitio: Odoo ya mantiene ese estado en el albarán.
+
 ### Fuera de alcance por ahora
 
-*"¿Qué pedidos de compra están pendientes de recibir?"* no puede expresarse
-con las herramientas actuales: requiere comparar dos campos entre sí
-(`qty_received < product_qty`) y los dominios de Odoo solo comparan un campo
-contra un valor. Necesitaría una herramienta nueva.
+Stock disponible y reposición (`qty_available`, `incoming_qty`): se pueden
+filtrar y listar, pero **no agregar**, porque son campos calculados sin
+almacenar. Haría falta marcarlos en el catálogo como "solo listar".
 
 ## Estructura
 

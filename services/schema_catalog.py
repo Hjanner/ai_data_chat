@@ -6,7 +6,7 @@ Es la unica frontera de seguridad de la capa de datos (junto con las ACL de
 Odoo, que se aplican igualmente porque las consultas corren con el env del
 usuario).
 
-Alcance: Ventas + Compras + Contactos + Producto.
+Alcance: Ventas + Compras + Recepciones + Contactos + Producto.
 """
 
 # --- Operadores permitidos en los domains -----------------------------------
@@ -36,7 +36,10 @@ DEFAULT_LIMIT = 20
 #   group_by : campos usables en groupby de `aggregate`.
 #   measures : campos numericos agregables en las medidas de `aggregate`.
 #   output   : campos devolvibles por `query_records`.
-#   default_domain : se aplica salvo que la peticion traiga `state`/estado propio.
+#   default_domain : se aplica LEAF A LEAF, y solo si la peticion no filtra ya
+#                    por ese mismo campo. Asi, preguntar por recepciones ya
+#                    hechas quita el filtro de estado pero NO el de "solo
+#                    entradas", que es lo que delimita el modelo.
 CATALOG = {
     "sale.order": {
         "label": "Pedidos de venta",
@@ -124,6 +127,39 @@ CATALOG = {
         },
         "default_domain": [("state", "in", ["purchase", "done"])],
         "labels": {"partner_id": "Proveedor"},
+    },
+    "stock.picking": {
+        "label": "Recepciones de compra",
+        # Solo entradas: `picking_type_code` NO es filtrable a proposito, asi
+        # que el leaf del default_domain no se puede desactivar desde la
+        # peticion. Las entregas a farmacias se consultan por sale.order.
+        "filter": {
+            "state", "scheduled_date", "date_deadline", "partner_id", "origin",
+            "name", "company_id", "picking_type_id",
+            "partner_id.category_id", "partner_id.city",
+        },
+        "group_by": {
+            "partner_id", "state", "picking_type_id", "company_id",
+            "scheduled_date",
+        },
+        # No hay importes en un albaran: solo se cuentan.
+        "measures": set(),
+        "output": {
+            "name", "partner_id", "scheduled_date", "date_deadline", "state",
+            "origin", "picking_type_id",
+        },
+        "default_domain": [
+            ("picking_type_code", "=", "incoming"),
+            ("state", "not in", ["done", "cancel"]),
+        ],
+        # Aqui partner_id es el proveedor del que se espera la mercancia.
+        "labels": {
+            "partner_id": "Proveedor",
+            "name": "Referencia",
+            "origin": "Pedido de origen",
+            "scheduled_date": "Fecha prevista",
+            "picking_type_id": "Tipo de operación",
+        },
     },
     "res.partner": {
         "label": "Contactos",
