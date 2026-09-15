@@ -53,7 +53,7 @@ _KEYS = {
     "base_url": (("AI_DATA_CHAT_BASE_URL",), "ai_data_chat.base_url", ""),
     "model": (("AI_DATA_CHAT_MODEL",), "ai_data_chat.model", ""),
     "responder_mode": (("AI_DATA_CHAT_RESPONDER_MODE",), "ai_data_chat.responder_mode", "manual"),
-    "max_tool_iterations": (("AI_DATA_CHAT_MAX_TOOL_ITERATIONS",), "ai_data_chat.max_tool_iterations", "3"),
+    "max_tool_iterations": (("AI_DATA_CHAT_MAX_TOOL_ITERATIONS",), "ai_data_chat.max_tool_iterations", "4"),
     "http_timeout": (("AI_DATA_CHAT_HTTP_TIMEOUT",), "ai_data_chat.http_timeout", "60"),
     "http_referer": (("AI_DATA_CHAT_HTTP_REFERER",), "ai_data_chat.http_referer", "http://localhost"),
     "app_title": (("AI_DATA_CHAT_APP_TITLE",), "ai_data_chat.app_title", "Odoo AI Data Chat"),

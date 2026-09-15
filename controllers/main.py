@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import fields, http
-from odoo.exceptions import AccessError, MissingError
+from odoo.exceptions import AccessError, MissingError, UserError
 from odoo.http import request
 
 
@@ -73,3 +73,70 @@ class AiDataChatController(http.Controller):
             return {"error": str(err)}
         session.action_close()
         return {"session_id": session.id, "state": session.state}
+
+    # --- Acciones de escritura ------------------------------------------
+    # El modelo de lenguaje NO llega aquí: estos dos endpoints solo los
+    # dispara la persona pulsando en la ficha de confirmación del chat.
+
+    def _get_action(self, action_id):
+        action = request.env["ai.chat.action"].browse(int(action_id))
+        if not action.exists():
+            raise MissingError("Propuesta inexistente.")
+        action.check_access_rights("read")
+        action.check_access_rule("read")
+        return action
+
+    def _action_response(self, action):
+        """Cierra el ciclo: deja constancia en la conversación de lo ocurrido."""
+        message = None
+        if action.session_id:
+            msg = action.session_id.post_message(
+                "assistant",
+                content=action.summary_message(),
+                status="error" if action.error else "ok",
+            )
+            message = msg.to_dict()
+        return {"action": action.action_data(), "message": message}
+
+    @http.route("/ai_data_chat/action/<int:action_id>/confirm",
+                type="json", auth="user")
+    def action_confirm(self, action_id):
+        try:
+            action = self._get_action(action_id)
+        except (AccessError, MissingError) as err:
+            return {"error": str(err)}
+        try:
+            result = action.action_confirm()
+        except (AccessError, UserError) as err:
+            return {"error": str(err), "action": action.action_data()}
+        if not result.get("ok"):
+            return {"error": result.get("error"), "action": result.get("action")}
+        return self._action_response(action)
+
+    @http.route("/ai_data_chat/action/<int:action_id>/undo",
+                type="json", auth="user")
+    def action_undo(self, action_id):
+        try:
+            action = self._get_action(action_id)
+        except (AccessError, MissingError) as err:
+            return {"error": str(err)}
+        try:
+            result = action.action_undo()
+        except (AccessError, UserError) as err:
+            return {"error": str(err), "action": action.action_data()}
+        if not result.get("ok"):
+            return {"error": result.get("error"), "action": result.get("action")}
+        return self._action_response(action)
+
+    @http.route("/ai_data_chat/action/<int:action_id>/discard",
+                type="json", auth="user")
+    def action_discard(self, action_id):
+        try:
+            action = self._get_action(action_id)
+        except (AccessError, MissingError) as err:
+            return {"error": str(err)}
+        try:
+            action.action_discard()
+        except AccessError as err:
+            return {"error": str(err)}
+        return self._action_response(action)

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!-- Escribir desde el asistente es un permiso aparte de poder
+             preguntarle. Quien no lo tenga sigue pudiendo consultar, pero
+             ni siquiera se le ofrecen las herramientas de escritura.
+             Las ACL de Odoo sobre productos/contactos siguen aplicando
+             por encima de este grupo. -->
+        <!-- Categoría propia y visible: si no, el grupo no aparece como
+             casilla en el formulario de usuario (la categoría "Technical"
+             de Odoo tiene visible=0) y habría que asignarlo a mano desde
+             Ajustes → Técnico → Grupos. -->
+        <record id="module_category_ai_data_chat" model="ir.module.category">
+            <field name="name">Asistente de datos</field>
+            <field name="description">Permisos del chat de consultas sobre los datos del ERP.</field>
+            <field name="sequence">90</field>
+        </record>
+
+        <record id="group_ai_chat_write" model="res.groups">
+            <field name="name">Escritura</field>
+            <field name="category_id" ref="module_category_ai_data_chat"/>
+            <field name="comment">Permite proponer y confirmar altas y modificaciones de datos desde el asistente de datos.</field>
+        </record>
+
+    </data>
+</odoo>

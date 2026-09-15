@@ -12,15 +12,28 @@ de propagarse, para que el bucle del chatbot pueda reaccionar.
 import logging
 
 from . import query_tools
+from . import write_tools
+from .write_catalog import WriteCatalogError
 from . import schema_catalog as cat
 from . import date_utils
 
 _logger = logging.getLogger(__name__)
 
-TOOLS = {
+# Herramientas de solo lectura: siempre disponibles.
+READ_TOOLS = {
     "aggregate": query_tools.aggregate,
     "query_records": query_tools.query_records,
 }
+
+# Herramientas de escritura: PROPONEN, no escriben. La confirmacion la hace
+# una persona desde la UI (`ai.chat.action.action_confirm`), nunca el modelo.
+WRITE_TOOLS = {
+    "describe_create": write_tools.describe_create,
+    "propose_create": write_tools.propose_create,
+    "propose_update": write_tools.propose_update,
+}
+
+TOOLS = dict(READ_TOOLS, **WRITE_TOOLS)
 
 
 def run_tool(env, tool, params):
@@ -36,6 +49,8 @@ def run_tool(env, tool, params):
         result = TOOLS[tool](env, **params)
         result["ok"] = True
         return result
+    except WriteCatalogError as err:
+        return {"ok": False, "error": "write_catalog_error", "message": str(err)}
     except cat.CatalogError as err:
         return {"ok": False, "error": "catalog_error", "message": str(err)}
     except date_utils.PeriodError as err:

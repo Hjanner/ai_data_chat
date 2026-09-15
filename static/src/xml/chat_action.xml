@@ -60,6 +60,112 @@
                                     </table>
                                 </div>
 
+                                <!-- Ficha de confirmación de una escritura.
+                                     Nada se ha escrito hasta que se pulsa. -->
+                                <div t-if="m.action" class="o_ai_chat_action mt-2"
+                                     t-att-class="'o_state_' + m.action.state">
+                                    <div class="o_ai_chat_action_title">
+                                        <i class="fa fa-pencil-square-o me-1"/>
+                                        <t t-esc="m.action.preview.title"/>
+                                    </div>
+
+                                    <table class="table table-sm mb-0 mt-2"
+                                           t-if="m.action.preview.lines.length">
+                                        <tbody>
+                                            <tr t-foreach="m.action.preview.lines" t-as="l" t-key="l.label">
+                                                <th class="o_label" t-esc="l.label"/>
+                                                <td t-esc="l.value"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <table class="table table-sm mb-0 mt-2"
+                                           t-if="m.action.preview.changes">
+                                        <tbody>
+                                            <tr t-foreach="m.action.preview.changes" t-as="c" t-key="c.label">
+                                                <th class="o_label" t-esc="c.label"/>
+                                                <td>
+                                                    <span class="o_ai_chat_before" t-esc="c.before"/>
+                                                    <i class="fa fa-long-arrow-right mx-2"/>
+                                                    <span class="o_ai_chat_after" t-esc="c.after"/>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <div class="o_ai_chat_defaults mt-2"
+                                         t-if="m.action.preview.defaults.length">
+                                        <small class="text-muted">
+                                            Además, por defecto:
+                                            <t t-esc="m.action.preview.defaults.join(' · ')"/>
+                                        </small>
+                                    </div>
+
+                                    <div class="alert alert-warning py-1 px-2 mt-2 mb-0"
+                                         t-if="m.action.preview.duplicates.length">
+                                        <small>
+                                            <i class="fa fa-exclamation-triangle me-1"/>
+                                            Ya existe algo parecido:
+                                            <t t-esc="m.action.preview.duplicates.map((d) => d.name).join(', ')"/>
+                                        </small>
+                                    </div>
+
+                                    <div class="alert alert-danger py-1 px-2 mt-2 mb-0" t-if="m.action.error">
+                                        <small t-esc="m.action.error"/>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-2"
+                                         t-if="m.action.state === 'draft'">
+                                        <button class="btn btn-sm btn-primary"
+                                                t-att-disabled="state.actionBusy === m.action.id"
+                                                t-on-click="() => this.confirmAction(m)">
+                                            <t t-esc="m.action.confirm_label"/>
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary"
+                                                t-att-disabled="state.actionBusy === m.action.id"
+                                                t-on-click="() => this.discardAction(m)">
+                                            Descartar
+                                        </button>
+                                        <small class="text-muted">Nada se ha guardado todavía.</small>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 mt-2"
+                                         t-if="m.action.state === 'done'">
+                                        <small class="text-success">
+                                            <i class="fa fa-check me-1"/>Aplicado.
+                                        </small>
+                                        <a t-if="m.action.result_url"
+                                           t-att-href="m.action.result_url">
+                                            <small>Abrir en Odoo</small>
+                                        </a>
+                                        <button t-if="m.action.can_undo"
+                                                class="btn btn-sm btn-link p-0"
+                                                t-att-disabled="state.actionBusy === m.action.id"
+                                                t-on-click="() => this.undoAction(m)">
+                                            <small><i class="fa fa-undo me-1"/>Deshacer</small>
+                                        </button>
+                                        <small class="text-muted" t-elif="m.action.undo_blocked"
+                                               t-esc="m.action.undo_blocked"/>
+                                    </div>
+
+                                    <div class="mt-2" t-if="m.action.state === 'reverted'">
+                                        <small class="text-muted">
+                                            <i class="fa fa-undo me-1"/>Cambio deshecho.
+                                        </small>
+                                        <a t-if="m.action.result_url" class="ms-2"
+                                           t-att-href="m.action.result_url">
+                                            <small>Abrir en Odoo</small>
+                                        </a>
+                                    </div>
+
+                                    <div class="mt-2" t-if="m.action.state === 'discarded'">
+                                        <small class="text-muted">Descartado. No se escribió nada.</small>
+                                    </div>
+                                    <div class="mt-2" t-if="m.action.state === 'expired'">
+                                        <small class="text-muted">Propuesta caducada. Vuelve a pedirla.</small>
+                                    </div>
+                                </div>
+
                                 <div t-if="m.tool_name" class="o_ai_chat_meta text-muted mt-1">
                                     <small>
                                         <i class="fa fa-wrench me-1"/>

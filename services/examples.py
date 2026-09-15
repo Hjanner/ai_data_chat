@@ -111,3 +111,87 @@ EXAMPLE_QUESTIONS = [
         },
     },
 ]
+
+
+# --- Fase 1 de escritura: los 3 casos objetivo -----------------------------
+# Igual que EXAMPLE_QUESTIONS, son fixtures de desarrollo: se ejecutan desde
+# `tools/run_tool.py` (`demo_write()`) para comprobar la capa de escritura sin
+# gastar API. NINGUNO escribe en la base de datos: `propose_*` solo deja un
+# borrador en `ai.chat.action` pendiente de que una persona lo confirme.
+WRITE_CASES = [
+    {
+        "key": "w1",
+        "label": "Crear un producto (alta simple con relleno por turnos)",
+        "steps": [
+            # 1) El asistente consulta qué campos hacen falta antes de preguntar.
+            {"tool": "describe_create", "params": {"model": "product.template"}},
+            # 2) Petición incompleta: debe responder qué falta, no inventarlo.
+            {"tool": "propose_create", "params": {
+                "model": "product.template",
+                "values": {"name": "Ibuprofeno 400mg caja 20"},
+            }},
+            # 3) Petición completa -> borrador pendiente de confirmar.
+            {"tool": "propose_create", "params": {
+                "model": "product.template",
+                "values": {
+                    "name": "Ibuprofeno 400mg caja 20",
+                    "list_price": "12,50",
+                    "categ_id": "All",
+                    "default_code": "IBU-400-20",
+                },
+            }},
+        ],
+    },
+    {
+        "key": "w2",
+        "label": "Crear un contacto distinguiendo cliente de proveedor",
+        "steps": [
+            # 1) Sin rol: falta un obligatorio, debe preguntarlo.
+            {"tool": "propose_create", "params": {
+                "model": "res.partner",
+                "values": {"name": "Farmacia San Rafael"},
+            }},
+            # 2) Email inválido: lo rechaza el módulo, no el ORM.
+            {"tool": "propose_create", "params": {
+                "model": "res.partner",
+                "values": {"name": "Farmacia San Rafael", "role": "cliente",
+                           "email": "no-es-un-email"},
+            }},
+            # 3) Completo, rol "ambos" -> customer_rank y supplier_rank.
+            {"tool": "propose_create", "params": {
+                "model": "res.partner",
+                "values": {
+                    "name": "Distribuidora Centro",
+                    "role": "ambos",
+                    "phone": "+58 212 555 0110",
+                    "email": "contacto@distcentro.test",
+                    "city": "Caracas",
+                },
+            }},
+        ],
+    },
+    {
+        "key": "w3",
+        "label": "Actualizar el precio de venta de un producto",
+        "steps": [
+            # 1) Localizar el registro (esto ya lo hace la capa de lectura).
+            {"tool": "query_records", "params": {
+                "model": "product.product",
+                "fields": ["name", "default_code", "list_price"],
+                "domain": [["name", "ilike", "a"]],
+                "limit": 5,
+            }},
+            # 2) Sin record_id: se rechaza, hay que desambiguar antes.
+            {"tool": "propose_update", "params": {
+                "model": "product.product",
+                "values": {"list_price": 3.20},
+            }},
+            # 3) Campo fuera de la lista blanca de modificación.
+            {"tool": "propose_update", "params": {
+                "model": "product.product",
+                "record_id": 1,
+                "values": {"name": "Nombre nuevo"},
+            }},
+        ],
+    },
+]

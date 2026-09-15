@@ -8,6 +8,8 @@ al modelo qué puede pedir.
 """
 from . import date_utils
 from . import schema_catalog as cat
+from . import write_catalog as wcat
+from .write_tools import WRITE_GROUP
 
 _BUSINESS_CONTEXT = (
     "Eres el asistente de datos de una droguería (distribuidora mayorista) que "
@@ -31,7 +33,8 @@ _RULES = [
     "Responde SIEMPRE en español, de forma breve y concreta.",
     "Para obtener datos usa exclusivamente las herramientas `aggregate` y "
     "`query_records`. No inventes cifras.",
-    "Solo lectura: nunca propongas crear, modificar ni borrar registros.",
+    "Por defecto solo consultas: no propongas crear, modificar ni borrar nada "
+    "salvo que la persona lo pida explícitamente.",
     "No inventes nombres de campos: usa únicamente los listados en el catálogo.",
     "Para acotar por fechas usa el parámetro `period` con un nombre de periodo "
     "válido; no calcules fechas tú.",
@@ -39,13 +42,73 @@ _RULES = [
     "facturación, márgenes…), dilo con claridad en vez de adivinar.",
     "Tras recibir el resultado de una herramienta, redacta la respuesta final "
     "para la persona, citando las cifras relevantes con separador de miles.",
+    "No inventes la moneda: los importes no llevan símbolo salvo que el dato lo "
+    "traiga. Escribe '5,75', no '5,75 €'.",
 ]
+
+
+_WRITE_RULES = [
+    "Puedes preparar altas y modificaciones, pero NUNCA las aplicas tú: las "
+    "herramientas `propose_*` solo dejan una propuesta que la persona confirma "
+    "pulsando un botón. Si te responde \"sí\" o \"confirma\" por escrito, "
+    "recuérdale que tiene que pulsar el botón de la ficha.",
+    "Antes de preparar un alta, usa `describe_create` para saber qué campos "
+    "hacen falta y pregúntalos TODOS en un mismo mensaje. No te inventes el "
+    "cuestionario ni rellenes datos que la persona no te ha dado.",
+    "Si falta algún dato obligatorio, pide solo lo que falte; no repitas lo "
+    "que ya te han dicho.",
+    "Nunca inventes categorías, etiquetas ni contactos: si lo que te dicen no "
+    "existe, dilo y ofrece las opciones existentes que devuelva el error.",
+    "Para modificar, primero localiza el registro con `query_records` y usa el "
+    "`id` exacto en `propose_update`. Si hay varios candidatos, enséñaselos y "
+    "pregunta cuál; nunca elijas tú.",
+    "No se admiten cambios masivos: una acción modifica un campo de un "
+    "registro. Si piden algo tipo \"sube todos los X un 10%\", explica que no "
+    "puedes hacerlo.",
+    "Al contar una propuesta preparada, resume qué se va a crear o cambiar y "
+    "avisa de los duplicados si el resultado los menciona.",
+]
+
+
+def can_write(env):
+    """Solo se ofrecen las herramientas de escritura a quien tiene el grupo."""
+    if env is None:
+        return False
+    try:
+        return env.user.has_group(WRITE_GROUP)
+    except Exception:  # noqa: BLE001 - entorno sin usuario (tests, shell)
+        return False
+
+
+def _write_catalog_lines():
+    lines = ["", "Datos que se pueden CREAR o MODIFICAR (nada más):"]
+    for model, cfg in wcat.WRITE_CATALOG.items():
+        create_cfg = cfg.get("create")
+        update_cfg = (cfg.get("update") or {}).get("fields")
+        if not create_cfg and not update_cfg:
+            continue
+        lines.append("• %s — %s" % (model, cfg["label"]))
+        if create_cfg:
+            lines.append("    crear, obligatorios: %s" % ", ".join(create_cfg["required"]))
+            if create_cfg.get("optional"):
+                lines.append("    crear, opcionales: %s" % ", ".join(create_cfg["optional"]))
+        if update_cfg:
+            lines.append("    modificar (requiere record_id): %s" % ", ".join(update_cfg))
+    lines.append("    roles válidos de contacto: %s" % ", ".join(sorted(wcat.PARTNER_ROLES)))
+    return lines
 
 
 def build_system_prompt(env=None):
     catalog = cat.describe()
+    writable = can_write(env)
     lines = [_BUSINESS_CONTEXT, "", "Reglas:"]
     lines += ["- %s" % r for r in _RULES]
+    if writable:
+        lines += ["", "Reglas de escritura:"]
+        lines += ["- %s" % r for r in _WRITE_RULES]
+    else:
+        lines += ["- Solo lectura: no dispones de herramientas para crear ni "
+                  "modificar datos. Si te lo piden, di que no tienes permiso."]
     lines += ["", "Periodos válidos para `period.name`:",
               "  " + ", ".join(date_utils.supported_periods())]
     lines += ["", "Catálogo de modelos (lo único consultable):"]
@@ -59,6 +122,8 @@ def build_system_prompt(env=None):
         lines.append("    devolver (query_records): %s" % ", ".join(cfg["output"]))
         if cfg["default_domain"]:
             lines.append("    filtro por defecto aplicado: %s" % cfg["default_domain"])
+    if writable:
+        lines += _write_catalog_lines()
     return "\n".join(lines)
 
 
@@ -86,9 +151,20 @@ def _period_schema():
     }
 
 
-def tool_schemas():
-    """Lista de herramientas en formato OpenAI 'tools'."""
+def tool_schemas(env=None):
+    """Lista de herramientas en formato OpenAI 'tools'.
+
+    Las de escritura solo se incluyen si el usuario tiene el grupo: lo que no
+    se le ofrece al modelo, el modelo no puede pedirlo.
+    """
     models = list(cat.CATALOG.keys())
+    schemas = _read_tool_schemas(models)
+    if can_write(env):
+        schemas += _write_tool_schemas()
+    return schemas
+
+
+def _read_tool_schemas(models):
     return [
         {
             "type": "function",
@@ -153,6 +229,78 @@ def tool_schemas():
                         "limit": {"type": "integer", "description": "Máx. %d." % cat.MAX_LIMIT},
                     },
                     "required": ["model", "fields"],
+                },
+            },
+        },
+    ]
+
+
+def _write_tool_schemas():
+    """Herramientas que PREPARAN escrituras. Ninguna aplica cambios: el
+    commit lo dispara la persona desde la interfaz."""
+    creatable = [m for m, cfg in wcat.WRITE_CATALOG.items() if cfg.get("create")]
+    updatable = [m for m, cfg in wcat.WRITE_CATALOG.items() if (cfg.get("update") or {}).get("fields")]
+    values_schema = {
+        "type": "object",
+        "description": "Pares {campo: valor} con los campos del catálogo de escritura.",
+        "additionalProperties": True,
+    }
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "describe_create",
+                "description": (
+                    "Devuelve qué campos hacen falta para dar de alta un registro "
+                    "(obligatorios, opcionales y valores por defecto). Úsala ANTES "
+                    "de preguntarle los datos a la persona."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"model": {"type": "string", "enum": creatable}},
+                    "required": ["model"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "propose_create",
+                "description": (
+                    "Prepara un alta y la deja PENDIENTE DE CONFIRMAR. No escribe "
+                    "en la base de datos. Si faltan campos obligatorios, devuelve "
+                    "cuáles para que los preguntes."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "model": {"type": "string", "enum": creatable},
+                        "values": values_schema,
+                    },
+                    "required": ["model", "values"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "propose_update",
+                "description": (
+                    "Prepara la modificación de UN campo de UN registro existente y "
+                    "la deja PENDIENTE DE CONFIRMAR. No escribe en la base de datos. "
+                    "Requiere el id exacto, localizado antes con `query_records`."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "model": {"type": "string", "enum": updatable},
+                        "record_id": {
+                            "type": "integer",
+                            "description": "Id exacto del registro a modificar.",
+                        },
+                        "values": values_schema,
+                    },
+                    "required": ["model", "record_id", "values"],
                 },
             },
         },

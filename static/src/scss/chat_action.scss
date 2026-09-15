@@ -95,6 +95,66 @@
         }
     }
 
+    // Ficha de confirmación de una escritura propuesta. Se distingue a
+    // propósito del resto del hilo: aquí hay algo que decidir.
+    .o_ai_chat_action {
+        border: 1px solid #d6c68a;
+        border-left: 3px solid #b38f00;
+        border-radius: 4px;
+        background-color: #fffdf3;
+        padding: 8px 10px;
+        max-width: 100%;
+        overflow-x: auto;
+
+        .o_ai_chat_action_title {
+            font-weight: 600;
+        }
+
+        table.table {
+            width: auto;
+            margin-bottom: 0;
+            font-size: 12px;
+            background-color: transparent;
+
+            th.o_label {
+                font-weight: 500;
+                color: #6c757d;
+                white-space: nowrap;
+                padding-right: 12px;
+            }
+
+            td {
+                white-space: normal;
+            }
+        }
+
+        .o_ai_chat_before {
+            text-decoration: line-through;
+            color: #6c757d;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .o_ai_chat_after {
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        &.o_state_done {
+            border-color: #b2dfb5;
+            border-left-color: #28a745;
+            background-color: #f6fff7;
+        }
+
+        &.o_state_discarded,
+        &.o_state_expired,
+        &.o_state_reverted {
+            border-color: #dee2e6;
+            border-left-color: #adb5bd;
+            background-color: #f8f9fa;
+            opacity: 0.75;
+        }
+    }
+
     .o_ai_chat_input textarea {
         resize: none;
     }

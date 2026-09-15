@@ -78,7 +78,7 @@ class LLMClient:
                 messages.append({"role": role, "content": item["content"]})
         messages.append({"role": "user", "content": user_text})
 
-        tools = llm_prompt.tool_schemas()
+        tools = llm_prompt.tool_schemas(self.env)
         tool_trace = []
         tokens_in = tokens_out = 0
         model_used = self.cfg["model"]
@@ -127,7 +127,30 @@ class LLMClient:
                     "content": json.dumps(self._shrink(result), ensure_ascii=False),
                 })
 
-        # Se agotaron las iteraciones sin respuesta final.
+        # Se agotaron las iteraciones. En vez de rendirse, se pide una última
+        # respuesta SIN herramientas: el modelo ya tiene los resultados en el
+        # historial, así que puede redactar. Esto evita perder una propuesta de
+        # escritura que sí llegó a prepararse por quedarse sin turnos.
+        content = ""
+        try:
+            data = self._chat(messages, tools=None)
+            usage = data.get("usage") or {}
+            tokens_in += usage.get("prompt_tokens", 0) or 0
+            tokens_out += usage.get("completion_tokens", 0) or 0
+            msg = ((data.get("choices") or [{}])[0].get("message") or {})
+            content = (msg.get("content") or "").strip()
+        except LLMError as err:
+            _logger.warning("Cierre sin herramientas también falló: %s", err)
+
+        if content:
+            return {
+                "status": "ok",
+                "content": content,
+                "tool_trace": tool_trace,
+                "model_used": model_used,
+                "tokens_input": tokens_in,
+                "tokens_output": tokens_out,
+            }
         return {
             "status": "error",
             "content": (
@@ -142,7 +165,7 @@ class LLMClient:
         }
 
     # --- Interno -----------------------------------------------------
-    def _chat(self, messages, tools):
+    def _chat(self, messages, tools=None):
         headers = {
             "Authorization": "Bearer %s" % self.cfg["api_key"],
             "Content-Type": "application/json",
@@ -155,10 +178,13 @@ class LLMClient:
         payload = {
             "model": self.cfg["model"],
             "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
             "temperature": 0,
         }
+        # Sin `tools` el modelo no puede pedir más herramientas: se usa para
+        # forzar la redacción final cuando se agotan las iteraciones.
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         url = self.cfg["base_url"].rstrip("/") + "/chat/completions"
         data = self.transport.post_json(url, payload, headers, self.cfg["http_timeout"])
         if "error" in data and not data.get("choices"):

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="view_ai_chat_action_tree" model="ir.ui.view">
+            <field name="name">ai.chat.action.tree</field>
+            <field name="model">ai.chat.action</field>
+            <field name="arch" type="xml">
+                <tree string="Acciones del asistente" create="false">
+                    <field name="create_date" string="Fecha"/>
+                    <field name="user_id"/>
+                    <field name="operation"/>
+                    <field name="model_name"/>
+                    <field name="result_name"/>
+                    <field name="state"
+                           decoration-success="state == 'done'"
+                           decoration-muted="state in ('discarded', 'expired')"
+                           widget="badge"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="view_ai_chat_action_form" model="ir.ui.view">
+            <field name="name">ai.chat.action.form</field>
+            <field name="model">ai.chat.action</field>
+            <field name="arch" type="xml">
+                <form string="Acción del asistente" create="false" edit="false">
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="operation"/>
+                                <field name="model_name"/>
+                                <field name="record_id"/>
+                                <field name="state"/>
+                            </group>
+                            <group>
+                                <field name="user_id"/>
+                                <field name="session_id"/>
+                                <field name="result_id"/>
+                                <field name="result_name"/>
+                                <field name="error"/>
+                            </group>
+                        </group>
+                        <group string="Traza">
+                            <field name="values"/>
+                            <field name="before_values"/>
+                            <field name="preview"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_ai_chat_action" model="ir.actions.act_window">
+            <field name="name">Acciones de escritura</field>
+            <field name="res_model">ai.chat.action</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiley_face">Aquí queda registrada cada alta o modificación propuesta desde el chat.</p>
+                <p>Incluye las que se descartaron: sirve como pista de auditoría.</p>
+            </field>
+        </record>
+
+        <menuitem id="menu_ai_chat_action"
+                  name="Acciones de escritura"
+                  parent="menu_ai_data_chat_root"
+                  action="action_ai_chat_action"
+                  sequence="30"
+                  groups="ai_data_chat.group_ai_chat_write"/>
+
+    </data>
+</odoo>

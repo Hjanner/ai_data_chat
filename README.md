@@ -3,15 +3,17 @@
 Módulo de Odoo que añade un **chat para preguntar por los datos del ERP en
 lenguaje natural**. En vez de buscar el informe adecuado y configurar sus
 filtros, se escribe la pregunta y el asistente responde con la cifra y una
-tabla de apoyo.
+tabla de apoyo. También puede **preparar altas y cambios de datos**, que
+siempre confirma una persona.
 
 Está pensado para una distribuidora mayorista (el ejemplo del que nace es una
 droguería que suministra a farmacias), pero el catálogo de datos es
 configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 
-> **Solo lectura.** El módulo no puede crear, modificar ni borrar nada en
-> Odoo, y cada usuario obtiene únicamente los datos a los que ya tiene
-> acceso.
+> **El asistente nunca escribe por su cuenta.** Prepara una propuesta y la
+> deja pendiente; la escritura la dispara una persona pulsando un botón.
+> Además, cada usuario solo ve y solo toca los datos a los que su usuario de
+> Odoo ya tiene acceso, y escribir exige un grupo aparte.
 
 ## Qué tipo de preguntas responde
 
@@ -32,6 +34,46 @@ configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 Distingue por sí solo de qué lado del negocio se habla: en *"¿qué cliente nos
 ha comprado más y a qué proveedor le compramos más nosotros?"* consulta los
 modelos de venta y los de compra en la misma respuesta.
+
+## Qué puede crear y modificar
+
+Solo esto, y solo con el grupo **Asistente de datos / Escritura**:
+
+| Operación | Alcance |
+|---|---|
+| Crear producto | Nombre, precio, categoría (+ referencia, coste, código de barras) |
+| Crear contacto | Nombre y rol *cliente / proveedor / ambos* (+ teléfono, email, ciudad, dirección, RIF, etiquetas) |
+| Modificar un producto | Precio de venta, coste, referencia interna, código de barras, nombre |
+| Modificar un contacto | Nombre, teléfono, email, ciudad, dirección, RIF, etiquetas |
+
+Cada modificación toca **un campo de un registro**, y se puede **deshacer**
+desde la propia ficha mientras nadie haya vuelto a cambiar ese valor.
+
+El flujo es siempre el mismo:
+
+```
+"quiero dar de alta un producto"
+   → el asistente pregunta qué falta (lee los campos del catálogo, no los inventa)
+   → prepara la propuesta y la muestra en una ficha
+   → NADA se ha escrito todavía
+   → la persona pulsa «Crear»  →  ahora sí se escribe
+```
+
+Un «sí» escrito en el chat no confirma nada: el modelo no dispone de ninguna
+herramienta que aplique cambios. Cada propuesta —aplicada, deshecha o
+descartada— queda registrada en *Asistente de datos → Acciones de escritura*.
+
+### Deshacer
+
+Un cambio aplicado trae un botón **Deshacer** en su ficha: el módulo guardó el
+valor anterior, así que lo devuelve a como estaba. Dos límites deliberados:
+
+- **No pisa el trabajo de nadie.** Si alguien ha vuelto a cambiar ese campo
+  desde entonces, el botón desaparece y te dice el valor actual para que lo
+  mires a mano.
+- **Las altas no se deshacen desde aquí.** Borrar un registro es destructivo y
+  puede fallar si ya se usa en otro sitio; eso se archiva o se elimina en Odoo,
+  con la cabeza fría.
 
 ## Requisitos
 
@@ -120,14 +162,16 @@ También se puede ejercitar desde `odoo-bin shell`:
 
 ```bash
 odoo-bin shell -d <BASE_DE_DATOS> --shell-interface=python < tools/run_tool.py
-# luego:  demo()   /   t("aggregate", model="sale.order", ...)   /   catalog()
+# luego:  demo()        preguntas de ejemplo de Ventas y Compras
+#         demo_write()  los 3 casos de escritura (solo dejan borradores)
+#         t("aggregate", model="sale.order", ...)   /   catalog()
 ```
 
 ## Cómo funciona
 
-El modelo de lenguaje **nunca escribe SQL ni toca el ORM**. Solo elige una de
-dos herramientas y rellena sus parámetros; el módulo los valida contra un
-catálogo blanco antes de ejecutar nada.
+El modelo de lenguaje **nunca escribe SQL ni toca el ORM**. Solo elige una
+herramienta y rellena sus parámetros; el módulo los valida contra un catálogo
+blanco antes de ejecutar nada.
 
 ```
 Pregunta → LLM → {tool, params} → validación (catálogo) → ORM de Odoo
@@ -135,7 +179,7 @@ Pregunta → LLM → {tool, params} → validación (catálogo) → ORM de Odoo
         Respuesta redactada ← LLM ← resultado (filas + etiquetas)
 ```
 
-### Las dos herramientas
+### Las herramientas
 
 **`aggregate`** — rankings, KPIs y conteos → `read_group`
 
@@ -162,6 +206,27 @@ run_tool(env, "query_records", {
 })
 ```
 
+**`describe_create`** — qué campos hacen falta para un alta. Es lo que permite
+que el asistente pregunte por los datos en vez de inventárselos.
+
+**`propose_create`** / **`propose_update`** — **preparan** un alta o un cambio y
+dejan un borrador en `ai.chat.action`. No tocan la base de datos. `propose_update`
+exige el `id` exacto del registro: si el nombre es ambiguo, el asistente enseña
+las candidatas y pregunta.
+
+```python
+run_tool(env, "propose_update", {
+    "model": "product.product",
+    "record_id": 42,                    # localizado antes con query_records
+    "values": {"list_price": "3,20"},   # un solo campo, un solo registro
+})
+```
+
+La confirmación (`ai.chat.action.action_confirm`) **no es una herramienta**: no
+aparece en el esquema que se le manda al modelo y solo la alcanzan los endpoints
+`/ai_data_chat/action/<id>/confirm`, `/undo` y `/discard`, que dispara la
+interfaz.
+
 ### Periodos aceptados
 
 `today`, `yesterday`, `this_week`, `this_month`, `last_month`,
@@ -179,7 +244,21 @@ LLM**: el modelo solo nombra el periodo.
 - **Permisos del usuario**: las consultas corren con el `env` de quien
   pregunta, así que se respetan las ACL y las reglas de registro de Odoo.
   Nunca se usa `sudo` para elevar privilegios.
-- **Solo lectura**: no existe ninguna ruta de escritura en el módulo.
+- **Escritura separada y en dos tiempos**: hace falta el grupo *Asistente de
+  datos / Escritura* para que se le ofrezcan siquiera las herramientas al
+  modelo, y aun así este solo puede **proponer**. Lo que no se le ofrece, no
+  puede pedirlo.
+- **Lista blanca de escritura aparte** (`services/write_catalog.py`), mucho más
+  corta que la de lectura: ni `state`, ni campos calculados, ni nada contable.
+  Nunca se crean categorías, etiquetas ni contactos "de paso" para completar un
+  alta: si no existen, se dice.
+- **Nada masivo**: una acción modifica un campo de un registro. Los cambios
+  guardan el valor anterior (`before_values`) y se pueden deshacer, salvo que
+  alguien haya tocado ese campo mientras tanto.
+- **Borradores con caducidad**: una propuesta sin confirmar expira a las 24 h y
+  no deja rastro en los datos de negocio.
+- **Pista de auditoría**: cada propuesta registra quién, cuándo, qué modelo, qué
+  valores y qué registro salió — incluidas las descartadas.
 - **Tope de filas**: `limit` tiene un máximo duro (`MAX_LIMIT = 200`).
 - **Conversaciones privadas**: cada usuario ve únicamente las suyas
   (reglas de registro en `security/`).
@@ -189,8 +268,9 @@ LLM**: el modelo solo nombra el periodo.
   `{"ok": false, "error": ...}` para que el chat pueda explicarlo.
 
 > ⚠️ **Privacidad**: para responder, las preguntas y los datos consultados se
-> envían al proveedor LLM que configures. Revisa su política de tratamiento
-> de datos antes de usarlo con información real de clientes.
+> envían al proveedor LLM que configures — y, si usas la escritura, también los
+> datos de las altas (nombres de proveedores, precios…). Revisa su política de
+> tratamiento de datos antes de usarlo con información real de clientes.
 
 ## Alcance de los datos
 
@@ -199,7 +279,7 @@ LLM**: el modelo solo nombra el periodo.
 | Ventas | `sale.order`, `sale.order.line` |
 | Compras | `purchase.order`, `purchase.order.line` |
 | Contactos | `res.partner` |
-| Productos | `product.product` |
+| Productos | `product.product`, `product.template` (altas) |
 
 Ampliar el alcance es añadir una entrada al `CATALOG` de
 `services/schema_catalog.py` con los campos filtrables, agrupables, medibles
@@ -231,8 +311,9 @@ contra un valor. Necesitaría una herramienta nueva.
 
 ```
 ai_data_chat/
-├── models/          ai.chat.session, ai.chat.message, ai.chat.responder
-├── services/        catálogo, herramientas, periodos, prompt y cliente LLM
+├── models/          ai.chat.session, ai.chat.message, ai.chat.action, ai.chat.responder
+├── services/        catálogos (lectura y escritura), herramientas, periodos,
+│                    prompt y cliente LLM
 ├── controllers/     endpoints JSON que consume la interfaz
 ├── static/src/      acción cliente OWL (chat)
 ├── views/           menús y vistas backend de respaldo

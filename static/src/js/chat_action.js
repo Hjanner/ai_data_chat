@@ -46,6 +46,8 @@ export class AiDataChat extends Component {
             messages: [],
             input: "",
             loading: false,
+            // Id de la acción que se está confirmando/descartando ahora mismo.
+            actionBusy: null,
         });
 
         onWillStart(async () => {
@@ -105,6 +107,45 @@ export class AiDataChat extends Component {
             await this.loadSessions();
         } finally {
             this.state.loading = false;
+        }
+    }
+
+    // --- Acciones de escritura ---------------------------------------
+    // El botón es el único camino hacia la escritura real: el modelo no
+    // tiene ninguna herramienta que confirme.
+    async confirmAction(message) {
+        await this._resolveAction(message, "confirm");
+    }
+
+    async discardAction(message) {
+        await this._resolveAction(message, "discard");
+    }
+
+    async undoAction(message) {
+        await this._resolveAction(message, "undo");
+    }
+
+    async _resolveAction(message, verb) {
+        const action = message.action;
+        if (!action || this.state.actionBusy) {
+            return;
+        }
+        this.state.actionBusy = action.id;
+        try {
+            const res = await this.rpc(`/ai_data_chat/action/${action.id}/${verb}`);
+            if (res.action) {
+                message.action = res.action;
+            }
+            if (res.error) {
+                this.notification.add(res.error, { type: "danger" });
+                return;
+            }
+            if (res.message) {
+                this.state.messages.push(res.message);
+            }
+            await this.loadSessions();
+        } finally {
+            this.state.actionBusy = null;
         }
     }
 

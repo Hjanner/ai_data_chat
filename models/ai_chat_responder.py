@@ -50,7 +50,7 @@ class AiChatResponder(models.AbstractModel):
                 return self._error(_("No he podido leer el JSON: %s") % err)
             if not isinstance(payload, dict) or "tool" not in payload:
                 return self._error(_(
-                    "Formato esperado: {\"tool\": \"aggregate|query_records\", "
+                    "Formato esperado: {\"tool\": \"<herramienta>\", "
                     "\"params\": {...}}"
                 ))
             return self._run_and_format(payload.get("tool"), payload.get("params") or {})
@@ -81,8 +81,17 @@ class AiChatResponder(models.AbstractModel):
             _logger.warning("El proveedor LLM falló: %s", err)
             return self._error(_("Error al consultar la IA: %s") % err)
 
-        first_tool = (result.get("tool_trace") or [{}])[0]
+        trace = result.get("tool_trace") or []
+        first_tool = (trace or [{}])[0]
+        # Si alguna herramienta dejó un borrador de escritura, se engancha al
+        # mensaje para que la UI pinte la ficha de confirmación.
+        action_id = None
+        for step in trace:
+            candidate = (step.get("result") or {}).get("action_id")
+            if candidate:
+                action_id = candidate
         return {
+            "action_id": action_id,
             "status": result.get("status", "ok"),
             "content": result.get("content"),
             "tool_name": first_tool.get("tool"),
@@ -114,6 +123,7 @@ class AiChatResponder(models.AbstractModel):
             "tool_name": tool,
             "tool_params": params,
             "tool_result": result,
+            "action_id": result.get("action_id"),
         }
 
     @api.model
@@ -125,6 +135,28 @@ class AiChatResponder(models.AbstractModel):
         lines = []
         if title:
             lines.append(title)
+
+        # Herramientas de escritura: no devuelven filas, devuelven una
+        # propuesta pendiente de confirmar (o la lista de lo que falta).
+        if result.get("status") == "incomplete":
+            faltan = ", ".join(f["label"] for f in result.get("missing") or [])
+            return "\n".join(lines + [_("Faltan datos obligatorios: %s.") % faltan])
+        if result.get("preview"):
+            preview = result["preview"]
+            lines.append(preview.get("title", _("Propuesta preparada.")))
+            lines.append(_("Revisa la ficha y confirma para aplicarla."))
+            return "\n".join(lines)
+        if result.get("spec"):
+            spec = result["spec"]
+            req = ", ".join(f["label"] for f in spec.get("required") or [])
+            opt = ", ".join(f["label"] for f in spec.get("optional") or [])
+            lines.append(_("Para crear un/a %(label)s hacen falta: %(req)s.") % {
+                "label": spec.get("label", ""), "req": req,
+            })
+            if opt:
+                lines.append(_("Opcionales: %s.") % opt)
+            return "\n".join(lines)
+
         rows = result.get("rows") or []
         tool = result.get("tool")
 
@@ -176,7 +208,9 @@ class AiChatResponder(models.AbstractModel):
                 "Estoy en modo manual: no interpreto lenguaje natural, solo "
                 "llamadas de herramienta en JSON. Por ejemplo:\n"
                 '   {"tool": "query_records", "params": {"model": "sale.order", '
-                '"fields": ["name", "amount_total"], "limit": 5}}\n\n'
+                '"fields": ["name", "amount_total"], "limit": 5}}\n'
+                "Herramientas disponibles: aggregate, query_records, "
+                "describe_create, propose_create, propose_update.\n\n"
                 "Para preguntar con tus propias palabras, activa el modo IA: "
                 "pon 'llm' en el parámetro de sistema 'ai_data_chat.responder_mode' "
                 "(o AI_DATA_CHAT_RESPONDER_MODE en el .env del módulo)."

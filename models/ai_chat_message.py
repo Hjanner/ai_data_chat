@@ -26,6 +26,10 @@ class AiChatMessage(models.Model):
     tool_name = fields.Char(string="Herramienta")
     tool_params = fields.Json(string="Parámetros")
     tool_result = fields.Json(string="Resultado")
+    # Acción de escritura propuesta en este mensaje (si la hubo).
+    action_id = fields.Many2one(
+        "ai.chat.action", string="Acción propuesta", ondelete="set null",
+    )
     status = fields.Selection(
         [("ok", "OK"), ("error", "Error")],
         string="Estado", default="ok",
@@ -54,6 +58,7 @@ class AiChatMessage(models.Model):
             "status": self.status,
             "tool_name": self.tool_name or None,
             "tool_result": self.tool_result or None,
+            "action": self.action_id.action_data() if self.action_id else None,
             "create_date": fields.Datetime.to_string(self.create_date),
             "tokens_input": self.tokens_input,
             "tokens_output": self.tokens_output,

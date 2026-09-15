@@ -64,7 +64,13 @@ class AiChatSession(models.Model):
         user_text = (user_text or "").strip()
         user_msg = self.post_message("user", content=user_text)
 
-        answer = self.env["ai.chat.responder"].respond(self, user_text)
+        # La conversación viaja por contexto: las herramientas solo reciben
+        # `env`, y las de escritura necesitan saber a qué chat pertenece el
+        # borrador que dejan.
+        responder = self.env["ai.chat.responder"].with_context(
+            ai_chat_session_id=self.id
+        )
+        answer = responder.respond(self, user_text)
         assistant_msg = self.post_message(
             "assistant",
             content=answer.get("content"),
@@ -72,6 +78,7 @@ class AiChatSession(models.Model):
             tool_name=answer.get("tool_name"),
             tool_params=answer.get("tool_params"),
             tool_result=answer.get("tool_result"),
+            action_id=answer.get("action_id"),
             model_used=answer.get("model_used"),
             tokens_input=answer.get("tokens_input", 0),
             tokens_output=answer.get("tokens_output", 0),
