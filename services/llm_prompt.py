@@ -42,6 +42,9 @@ _RULES = [
     "Por defecto solo consultas: no propongas crear, modificar ni borrar nada "
     "salvo que la persona lo pida explícitamente.",
     "No inventes nombres de campos: usa únicamente los listados en el catálogo.",
+    "Para \"a qué precio compramos/vendemos\" usa SIEMPRE 'price_unit:weighted' "
+    "(media ponderada por cantidad), nunca 'price_unit:avg': el promedio simple "
+    "de precios unitarios miente en cuanto las cantidades no son iguales.",
     "Para acotar por fechas usa el parámetro `period` con un nombre de periodo "
     "válido; no calcules fechas tú.",
     "Si la pregunta es ambigua o pide datos fuera del catálogo (stock, "
@@ -125,6 +128,9 @@ def build_system_prompt(env=None):
             lines.append("    agrupar por: %s" % ", ".join(cfg["group_by"]))
         if cfg["measures"]:
             lines.append("    medir (sum/avg/min/max): %s" % ", ".join(cfg["measures"]))
+        if cfg.get("weighted"):
+            lines.append("    media ponderada por cantidad ('campo:weighted'): %s"
+                         % ", ".join(cfg["weighted"]))
         else:
             lines.append("    medir: no tiene importes; solo contar, con 'name:count'")
         lines.append("    devolver (query_records): %s" % ", ".join(cfg["output"]))

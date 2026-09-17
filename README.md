@@ -30,6 +30,7 @@ configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 - ¿A qué proveedor le hemos comprado más este trimestre?
 - ¿Qué productos hemos comprado más en los últimos 3 meses, por importe?
 - ¿Qué solicitudes de presupuesto de compra están pendientes y por cuánto?
+- ¿A qué proveedor le compramos más barato un producto?
 
 **Recepciones**
 
@@ -236,6 +237,34 @@ La confirmación (`ai.chat.action.action_confirm`) **no es una herramienta**: no
 aparece en el esquema que se le manda al modelo y solo la alcanzan los endpoints
 `/ai_data_chat/action/<id>/confirm`, `/undo` y `/discard`, que dispara la
 interfaz.
+
+### Precios: media ponderada, no promedio
+
+Preguntar *"¿a qué proveedor le compramos más barato?"* con un promedio simple
+de precios unitarios da una cifra falsa: dos unidades a 10 y mil a 6 no hacen
+un precio medio de 8, hacen **6,01**. Por eso existe la agregación `weighted`,
+que no es SQL sino una medida derivada: `suma(subtotal) ÷ suma(cantidad)`,
+calculada por grupo después del `read_group`.
+
+```python
+run_tool(env, "aggregate", {
+    "model": "purchase.order.line",
+    "group_by": ["partner_id"],
+    "measures": ["price_unit:weighted", "product_qty:sum"],
+    "domain": [["product_id", "=", 42]],
+    "order": "price_unit_weighted asc",       # el más barato primero
+})
+```
+
+Solo se pondera donde el catálogo lo declara (`CATALOG[modelo]["weighted"]`),
+con el par (importe, cantidad) de cada modelo — en compras `product_qty`, en
+ventas `product_uom_qty`. Sin cantidad devuelve `None`, no `0`: un cero el
+modelo lo leería como "gratis".
+
+> **Límite conocido:** no se puede pedir la evolución mensual del precio en una
+> sola consulta. `date_order` en las líneas es un campo relacionado **sin
+> almacenar**, y Odoo no agrupa por esos. Se obtiene comparando dos periodos
+> en dos consultas, que el asistente encadena solo.
 
 ### Periodos aceptados
 

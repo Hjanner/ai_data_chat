@@ -20,7 +20,11 @@ ALLOWED_OPERATORS = {
 LOGIC_OPERATORS = {"&", "|", "!"}
 
 # Agregaciones permitidas en las medidas de `aggregate`.
-ALLOWED_AGGREGATES = {"sum", "avg", "min", "max", "count"}
+# `weighted` no es una agregacion de SQL: es una medida DERIVADA que se calcula
+# despues del read_group como suma(importe) / suma(cantidad). Existe porque el
+# promedio simple de precios unitarios miente en cuanto las cantidades no son
+# iguales: 2 unidades a 10 y 1000 a 6 no hacen un precio medio de 8, hacen 6,01.
+ALLOWED_AGGREGATES = {"sum", "avg", "min", "max", "count", "weighted"}
 
 # Granularidades permitidas al agrupar por un campo de fecha (campo:granularidad).
 ALLOWED_DATE_GRANULARITY = {"day", "week", "month", "quarter", "year"}
@@ -64,20 +68,23 @@ CATALOG = {
         "filter": {
             "state", "product_id", "order_id.state", "order_id.date_order",
             "order_id.partner_id", "order_partner_id", "salesman_id",
-            "price_subtotal", "product_uom_qty", "qty_delivered", "qty_invoiced",
-            "product_id.categ_id",
+            "price_subtotal", "price_unit", "product_uom_qty", "qty_delivered",
+            "qty_invoiced", "product_id.categ_id",
         },
         "group_by": {
             "product_id", "order_partner_id", "salesman_id", "state",
             "product_id.categ_id",
         },
         "measures": {
-            "price_subtotal", "price_total", "product_uom_qty",
+            "price_subtotal", "price_total", "price_unit", "product_uom_qty",
             "qty_delivered", "qty_invoiced",
         },
+        # medida derivada -> (importe, cantidad) con los que se pondera
+        "weighted": {"price_unit": ("price_subtotal", "product_uom_qty")},
         "output": {
             "product_id", "name", "product_uom_qty", "qty_delivered",
-            "price_subtotal", "price_total", "order_id", "order_partner_id",
+            "price_unit", "price_subtotal", "price_total", "order_id",
+            "order_partner_id",
         },
         "default_domain": [("state", "in", ["sale", "done"])],
     },
@@ -109,21 +116,22 @@ CATALOG = {
         "filter": {
             "state", "product_id", "order_id.state", "order_id.date_order",
             "order_id.partner_id", "partner_id", "date_planned",
-            "price_subtotal", "product_qty", "qty_received", "qty_invoiced",
-            "product_id.categ_id",
+            "price_subtotal", "price_unit", "product_qty", "qty_received",
+            "qty_invoiced", "product_id.categ_id",
         },
         "group_by": {
             "product_id", "partner_id", "state", "product_id.categ_id",
             "date_planned",
         },
         "measures": {
-            "price_subtotal", "price_total", "product_qty",
+            "price_subtotal", "price_total", "price_unit", "product_qty",
             "qty_received", "qty_invoiced",
         },
+        "weighted": {"price_unit": ("price_subtotal", "product_qty")},
         "output": {
             "product_id", "name", "product_qty", "qty_received",
-            "price_subtotal", "price_total", "order_id", "partner_id",
-            "date_planned",
+            "price_unit", "price_subtotal", "price_total", "order_id",
+            "partner_id", "date_planned",
         },
         "default_domain": [("state", "in", ["purchase", "done"])],
         "labels": {"partner_id": "Proveedor"},
@@ -253,6 +261,15 @@ def check_measures(model, measures):
     parsed = []
     for spec in measures:
         field, agg, alias = parse_measure(spec)
+        if agg == "weighted":
+            weighted = cfg.get("weighted") or {}
+            if field not in weighted:
+                raise CatalogError(
+                    "No hay media ponderada definida para %s en %s. Disponibles: %s"
+                    % (field, model, ", ".join(sorted(weighted)) or "ninguna")
+                )
+            parsed.append((field, agg, alias))
+            continue
         if agg != "count" and field not in cfg["measures"]:
             raise CatalogError(
                 "Campo de medida no permitido para %s: %r. Permitidos: %s"
@@ -328,6 +345,7 @@ def describe(models=None):
             "filter": sorted(cfg["filter"]),
             "group_by": sorted(cfg["group_by"]),
             "measures": sorted(cfg["measures"]),
+            "weighted": sorted(cfg.get("weighted") or {}),
             "output": sorted(cfg["output"]),
             "default_domain": cfg["default_domain"],
         }
@@ -360,6 +378,7 @@ FIELD_LABELS = {
     "date_approve": "Fecha de confirmación",
     "date_planned": "Fecha prevista",
     "invoice_status": "Estado de facturación",
+    "price_unit": "Precio unitario",
     "price_subtotal": "Subtotal",
     "price_total": "Total línea",
     "categ_id": "Categoría",
@@ -386,7 +405,10 @@ FIELD_LABELS = {
 _GRANULARITY_LABELS = {
     "day": "día", "week": "semana", "month": "mes", "quarter": "trimestre", "year": "año",
 }
-_AGG_LABELS = {"sum": "suma", "avg": "promedio", "min": "mínimo", "max": "máximo"}
+_AGG_LABELS = {
+    "sum": "suma", "avg": "promedio", "min": "mínimo", "max": "máximo",
+    "weighted": "medio ponderado",
+}
 
 
 def field_label(field, model=None):

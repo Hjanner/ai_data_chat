@@ -110,6 +110,21 @@ EXAMPLE_QUESTIONS = [
             "limit": 50,
         },
     },
+    {
+        "key": "c4",
+        "label": "¿A qué proveedor le compramos más barato un producto?",
+        "tool": "aggregate",
+        "params": {
+            "model": "purchase.order.line",
+            "group_by": ["partner_id"],
+            # Ponderado por cantidad: el promedio simple de precios unitarios
+            # miente en cuanto las cantidades no son iguales.
+            "measures": ["price_unit:weighted", "product_qty:sum", "price_subtotal:sum"],
+            "domain": [["product_id.categ_id", "ilike", "All"]],
+            "order": "price_unit_weighted asc",
+            "limit": 10,
+        },
+    },
     # --- Recepciones ---------------------------------------------------
     {
         "key": "r1",

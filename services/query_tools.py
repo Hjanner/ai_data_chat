@@ -112,12 +112,26 @@ def aggregate(env, model, group_by, measures, domain=None, period=None,
 
     domain = _apply_default_domain(cfg, domain)
 
+    # Las medias ponderadas no las calcula SQL: se piden las dos sumas que las
+    # componen y se dividen despues, por grupo.
+    weighted_map = cfg.get("weighted") or {}
+    weighted = [
+        (field, alias, weighted_map[field])
+        for (field, agg, alias) in parsed_measures
+        if agg == "weighted"
+    ]
+
     # Campos read_group: 'alias:agg(campo)' evita colisiones de nombre.
     rg_fields = [
         "%s:%s(%s)" % (alias, agg, field)
         for (field, agg, alias) in parsed_measures
-        if agg != "count"
+        if agg not in ("count", "weighted")
     ]
+    # Sumas auxiliares para las ponderadas (con alias propio para no pisar
+    # una medida que el usuario haya pedido a la vez).
+    for _field, alias, (amount_field, qty_field) in weighted:
+        rg_fields.append("%s__amount:sum(%s)" % (alias, amount_field))
+        rg_fields.append("%s__qty:sum(%s)" % (alias, qty_field))
 
     records = env[model].sudo(False).read_group(
         domain, fields=rg_fields, groupby=group_by, lazy=False,
@@ -131,7 +145,16 @@ def aggregate(env, model, group_by, measures, domain=None, period=None,
             # read_group devuelve la clave tal cual (incluida 'campo:month').
             row[spec] = _norm_value(rec.get(spec))
         for (field, agg, alias) in parsed_measures:
-            row[alias] = count if agg == "count" else rec.get(alias, 0)
+            if agg == "count":
+                row[alias] = count
+            elif agg == "weighted":
+                amount = rec.get("%s__amount" % alias) or 0.0
+                qty = rec.get("%s__qty" % alias) or 0.0
+                # Sin cantidad no hay precio medio: mejor None que un 0 que
+                # el modelo leeria como "gratis".
+                row[alias] = round(amount / qty, 2) if qty else None
+            else:
+                row[alias] = rec.get(alias, 0)
         rows.append(row)
 
     # Orden en Python (independiente del backend, admite alias de medida).
