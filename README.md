@@ -31,6 +31,7 @@ configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 - ¿Qué productos hemos comprado más en los últimos 3 meses, por importe?
 - ¿Qué solicitudes de presupuesto de compra están pendientes y por cuánto?
 - ¿A qué proveedor le compramos más barato un producto?
+- ¿Qué proveedores tengo para este producto, a qué precio y en cuánto tiempo?
 
 **Recepciones**
 
@@ -266,6 +267,26 @@ modelo lo leería como "gratis".
 > almacenar**, y Odoo no agrupa por esos. Se obtiene comparando dos periodos
 > en dos consultas, que el asistente encadena solo.
 
+### Tarifas de proveedor
+
+`product.supplierinfo` responde *a qué precio y en cuánto tiempo puede
+servirnos cada proveedor*, que no es lo mismo que `purchase.order.line` — eso
+es lo que realmente se pagó. Tres cosas que el catálogo contempla:
+
+- **El precio va ligado a una cantidad mínima**, y un mismo proveedor puede
+  tener varias tarifas escalonadas del mismo producto. Ordenar solo por precio
+  puede poner en cabeza un escalón que no se alcanza, así que `min_qty` viaja
+  siempre con el precio y hay una regla en el prompt para citarlos juntos.
+- **Con descuento, el precio real es `price_discounted`** (`price × (1 −
+  descuento)`). Odoo lo calcula al leer y no tiene columna: se puede devolver,
+  pero **no ordenar ni agrupar** por él. Intentarlo da un error explicado, no
+  una lista mal ordenada. Ese es el papel de `unsortable` en el catálogo.
+- **Las tarifas caducadas se excluyen solas.** "Vigente" es *sin fecha de fin*
+  **o** *fecha de fin futura*, y en SQL comparar `NULL` con una fecha no
+  devuelve nada, así que un solo filtro no basta. El filtro por defecto admite
+  fragmentos con su propio `OR`, y `@today` se resuelve en el momento de la
+  consulta. Si preguntas explícitamente por `date_end`, el filtro se retira.
+
 ### Periodos aceptados
 
 Hacia atrás: `today`, `yesterday`, `this_week`, `this_month`, `last_month`,
@@ -323,6 +344,7 @@ LLM**: el modelo solo nombra el periodo.
 | Ventas | `sale.order`, `sale.order.line` |
 | Compras | `purchase.order`, `purchase.order.line` |
 | Recepciones | `stock.picking` (solo entradas) |
+| Tarifas de proveedor | `product.supplierinfo` |
 | Contactos | `res.partner` |
 | Productos | `product.product`, `product.template` (altas) |
 

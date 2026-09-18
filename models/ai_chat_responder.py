@@ -83,6 +83,10 @@ class AiChatResponder(models.AbstractModel):
 
         trace = result.get("tool_trace") or []
         first_tool = (trace or [{}])[0]
+        # Para la tabla interesa el último paso que devolvió datos: si el
+        # modelo tropezó en el primero, la tabla no puede ser la del tropiezo.
+        con_datos = [s for s in trace if (s.get("result") or {}).get("ok")]
+        tabla = con_datos[-1] if con_datos else first_tool
         # Si alguna herramienta dejó un borrador de escritura, se engancha al
         # mensaje para que la UI pinte la ficha de confirmación.
         action_id = None
@@ -94,11 +98,11 @@ class AiChatResponder(models.AbstractModel):
             "action_id": action_id,
             "status": result.get("status", "ok"),
             "content": result.get("content"),
-            "tool_name": first_tool.get("tool"),
-            "tool_params": first_tool.get("params"),
+            "tool_name": tabla.get("tool") or first_tool.get("tool"),
+            "tool_params": tabla.get("params") or first_tool.get("params"),
             "tool_result": {
-                "trace": result.get("tool_trace") or [],
-                **({} if not first_tool else first_tool.get("result", {})),
+                "trace": trace,
+                **({} if not tabla else tabla.get("result", {})),
             },
             "model_used": result.get("model_used"),
             "tokens_input": result.get("tokens_input", 0),

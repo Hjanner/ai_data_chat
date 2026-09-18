@@ -131,16 +131,25 @@ class LLMClient:
         # respuesta SIN herramientas: el modelo ya tiene los resultados en el
         # historial, así que puede redactar. Esto evita perder una propuesta de
         # escritura que sí llegó a prepararse por quedarse sin turnos.
+        # Primero con las herramientas declaradas pero prohibiendo usarlas
+        # (`tool_choice: none`): es lo que el protocolo prevé para forzar
+        # texto, y mantiene el historial coherente. Si el proveedor lo rechaza,
+        # se reintenta sin herramientas.
         content = ""
-        try:
-            data = self._chat(messages, tools=None)
+        for attempt_tools, choice in ((tools, "none"), (None, None)):
+            try:
+                data = self._chat(messages, attempt_tools, tool_choice=choice)
+            except LLMError as err:
+                _logger.warning("Cierre forzado (tools=%s) falló: %s",
+                                bool(attempt_tools), err)
+                continue
             usage = data.get("usage") or {}
             tokens_in += usage.get("prompt_tokens", 0) or 0
             tokens_out += usage.get("completion_tokens", 0) or 0
             msg = ((data.get("choices") or [{}])[0].get("message") or {})
             content = (msg.get("content") or "").strip()
-        except LLMError as err:
-            _logger.warning("Cierre sin herramientas también falló: %s", err)
+            if content:
+                break
 
         if content:
             return {
@@ -151,6 +160,28 @@ class LLMClient:
                 "tokens_input": tokens_in,
                 "tokens_output": tokens_out,
             }
+        # Ni con esas. Si alguna herramienta llegó a devolver datos, se
+        # entregan igualmente: la tabla es de la persona, no del modelo, y
+        # perderla por no tener el resumen redactado es el peor resultado.
+        ultimo = next(
+            (step for step in reversed(tool_trace)
+             if (step.get("result") or {}).get("ok")),
+            None,
+        )
+        if ultimo:
+            filas = (ultimo["result"].get("rows") or [])
+            return {
+                "status": "ok",
+                "content": (
+                    "He conseguido los datos pero no he podido redactar el "
+                    "resumen. Aquí están tal cual (%d resultado(s)):" % len(filas)
+                ),
+                "tool_trace": tool_trace,
+                "model_used": model_used,
+                "tokens_input": tokens_in,
+                "tokens_output": tokens_out,
+            }
+
         return {
             "status": "error",
             "content": (
@@ -165,7 +196,7 @@ class LLMClient:
         }
 
     # --- Interno -----------------------------------------------------
-    def _chat(self, messages, tools=None):
+    def _chat(self, messages, tools=None, tool_choice="auto"):
         headers = {
             "Authorization": "Bearer %s" % self.cfg["api_key"],
             "Content-Type": "application/json",
@@ -180,11 +211,12 @@ class LLMClient:
             "messages": messages,
             "temperature": 0,
         }
-        # Sin `tools` el modelo no puede pedir más herramientas: se usa para
-        # forzar la redacción final cuando se agotan las iteraciones.
+        # `tool_choice: none` deja las herramientas declaradas pero prohíbe
+        # usarlas: así se fuerza la redacción final sin romper el historial.
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
         url = self.cfg["base_url"].rstrip("/") + "/chat/completions"
         data = self.transport.post_json(url, payload, headers, self.cfg["http_timeout"])
         if "error" in data and not data.get("choices"):

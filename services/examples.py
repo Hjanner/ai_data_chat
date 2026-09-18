@@ -125,6 +125,21 @@ EXAMPLE_QUESTIONS = [
             "limit": 10,
         },
     },
+    {
+        "key": "c5",
+        "label": "¿Qué proveedores tengo para un producto, a qué precio y plazo?",
+        "tool": "query_records",
+        "params": {
+            "model": "product.supplierinfo",
+            "fields": ["partner_id", "price", "price_discounted", "min_qty",
+                       "delay", "currency_id"],
+            "domain": [["product_tmpl_id.name", "ilike", "Large Cabinet"]],
+            # El precio va ligado a la cantidad mínima: ordenar solo por precio
+            # puede poner en cabeza un escalón que no se alcanza.
+            "order": "price asc",
+            "limit": 20,
+        },
+    },
     # --- Recepciones ---------------------------------------------------
     {
         "key": "r1",

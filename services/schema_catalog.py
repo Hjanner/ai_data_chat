@@ -6,7 +6,8 @@ Es la unica frontera de seguridad de la capa de datos (junto con las ACL de
 Odoo, que se aplican igualmente porque las consultas corren con el env del
 usuario).
 
-Alcance: Ventas + Compras + Recepciones + Contactos + Producto.
+Alcance: Ventas + Compras + Recepciones + Tarifas de proveedor + Contactos +
+Producto.
 """
 
 # --- Operadores permitidos en los domains -----------------------------------
@@ -40,6 +41,8 @@ DEFAULT_LIMIT = 20
 #   group_by : campos usables en groupby de `aggregate`.
 #   measures : campos numericos agregables en las medidas de `aggregate`.
 #   output   : campos devolvibles por `query_records`.
+#   unsortable     : campos devolvibles pero NO ordenables (calculados sin
+#                    almacenar: Odoo los calcula al leer, pero no hay columna).
 #   default_domain : se aplica LEAF A LEAF, y solo si la peticion no filtra ya
 #                    por ese mismo campo. Asi, preguntar por recepciones ya
 #                    hechas quita el filtro de estado pero NO el de "solo
@@ -169,6 +172,50 @@ CATALOG = {
             "picking_type_id": "Tipo de operación",
         },
     },
+    "product.supplierinfo": {
+        "label": "Tarifas de proveedor",
+        "filter": {
+            "partner_id", "product_tmpl_id", "product_id", "price", "min_qty",
+            "delay", "discount", "company_id", "currency_id",
+            "date_start", "date_end",
+            "product_tmpl_id.categ_id", "product_tmpl_id.name",
+        },
+        "group_by": {
+            "partner_id", "product_tmpl_id", "currency_id", "company_id", "delay",
+        },
+        "measures": {"price", "min_qty", "delay", "discount"},
+        "output": {
+            "partner_id", "product_tmpl_id", "product_id", "price", "discount",
+            # `price_discounted` = price * (1 - discount/100). Es el precio que
+            # se paga de verdad, pero se calcula al leer y no tiene columna:
+            # se puede devolver, no ordenar ni agrupar.
+            "price_discounted",
+            "min_qty", "delay", "currency_id", "date_start", "date_end",
+            "product_code", "product_name",
+        },
+        "unsortable": {"price_discounted"},
+        # Una tarifa caducada no es una tarifa. Va como fragmento (con su OR)
+        # porque "sin fecha de fin" tambien es vigente: en SQL, comparar NULL
+        # con una fecha no devuelve nada.
+        "default_domain": [
+            ["|", ("date_end", "=", False), ("date_end", ">=", "@today")],
+        ],
+        "labels": {
+            "partner_id": "Proveedor",
+            "product_tmpl_id": "Producto",
+            "product_id": "Variante",
+            "price": "Precio de tarifa",
+            "price_discounted": "Precio neto",
+            "discount": "Descuento (%)",
+            "min_qty": "Cantidad mínima",
+            "delay": "Plazo de entrega (días)",
+            "currency_id": "Moneda",
+            "date_start": "Vigente desde",
+            "date_end": "Vigente hasta",
+            "product_code": "Referencia del proveedor",
+            "product_name": "Nombre en el proveedor",
+        },
+    },
     "res.partner": {
         "label": "Contactos",
         "filter": {
@@ -199,7 +246,20 @@ class CatalogError(ValueError):
 
 
 # --- Validadores ----------------------------------------------------------
+# El modelo de lenguaje escribe a veces 'product_supplierinfo' en vez de
+# 'product.supplierinfo'. Aceptarlo no abre nada: sigue teniendo que coincidir
+# con una entrada del catalogo. Rechazarlo solo gastaba un paso del bucle.
+_BY_UNDERSCORE = {name.replace(".", "_"): name for name in CATALOG}
+
+
+def normalize_model(model):
+    if isinstance(model, str) and model not in CATALOG:
+        return _BY_UNDERSCORE.get(model.strip(), model)
+    return model
+
+
 def check_model(model):
+    model = normalize_model(model)
     if model not in CATALOG:
         raise CatalogError(
             "Modelo no permitido: %r. Permitidos: %s"
@@ -277,6 +337,11 @@ def check_measures(model, measures):
             )
         parsed.append((field, agg, alias))
     return parsed
+
+
+def unsortable_fields(model):
+    """Campos que se pueden devolver pero no ordenar (calculados sin columna)."""
+    return check_model(model).get("unsortable") or set()
 
 
 def check_output_fields(model, fields):

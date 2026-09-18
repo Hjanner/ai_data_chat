@@ -20,6 +20,12 @@ _BUSINESS_CONTEXT = (
     "- VENTAS (lo que la droguería vende a las farmacias): modelos `sale.order` "
     "y `sale.order.line`. Ahí, \"cliente\" o \"farmacia\" = el contacto del "
     "campo partner_id. Estado confirmado: 'sale'; presupuesto: 'draft'/'sent'.\n"
+    "- TARIFAS DE PROVEEDOR (a qué precio y en cuánto tiempo puede servirnos "
+    "cada proveedor un producto, independientemente de lo que ya se le haya "
+    "comprado): modelo `product.supplierinfo`. Responde \"qué proveedores "
+    "tengo para X\", \"quién me lo sirve más rápido\", \"cuál es el precio "
+    "de tarifa\". No confundir con `purchase.order.line`, que es lo que "
+    "REALMENTE se pagó en compras pasadas.\n"
     "- RECEPCIONES (la mercancía que los proveedores tienen que entregar en el "
     "almacén): modelo `stock.picking`. Es lo que responde \"qué está pendiente "
     "de recibir\", \"qué está atrasado\" (periodo `until_now` sobre "
@@ -45,6 +51,15 @@ _RULES = [
     "Para \"a qué precio compramos/vendemos\" usa SIEMPRE 'price_unit:weighted' "
     "(media ponderada por cantidad), nunca 'price_unit:avg': el promedio simple "
     "de precios unitarios miente en cuanto las cantidades no son iguales.",
+    "En las tarifas de proveedor, el precio va SIEMPRE ligado a una cantidad "
+    "mínima, y un mismo proveedor puede tener varias tarifas escalonadas del "
+    "mismo producto. Cita el precio junto a su cantidad mínima; nunca digas "
+    "\"el precio de X es N\" a secas.",
+    "Di la moneda de la tarifa, y no compares precios en monedas distintas "
+    "como si fueran comparables.",
+    "Si una tarifa tiene descuento, el precio que se paga es el 'Precio neto' "
+    "(price_discounted), no el 'Precio de tarifa'.",
+    "Las tarifas caducadas se excluyen solas; no hace falta filtrarlas.",
     "Para acotar por fechas usa el parámetro `period` con un nombre de periodo "
     "válido; no calcules fechas tú.",
     "Si la pregunta es ambigua o pide datos fuera del catálogo (stock, "

@@ -53,13 +53,44 @@ _DEFAULT_EQUIVALENTS = {
 }
 
 
-def _domain_fields(domain):
-    return {
-        element[0]
-        for element in domain
-        if isinstance(element, (list, tuple)) and len(element) == 3
+def _is_leaf(element):
+    """Un leaf es (campo, operador, valor). Ojo: un fragmento con OR tambien
+    tiene tres elementos ('|', leaf, leaf), y no es un leaf."""
+    return (
+        isinstance(element, (list, tuple))
+        and len(element) == 3
         and isinstance(element[0], str)
-    }
+        and element[0] not in cat.LOGIC_OPERATORS
+        and isinstance(element[1], str)
+    )
+
+
+def _domain_fields(domain):
+    """Campos que aparecen a la izquierda de algun leaf, recursivamente."""
+    found = set()
+    for element in domain:
+        if isinstance(element, str):  # '&', '|', '!'
+            continue
+        if _is_leaf(element):
+            found.add(element[0])
+        elif isinstance(element, (list, tuple)):  # fragmento anidado
+            found.update(_domain_fields(element))
+    return found
+
+
+def _resolve_placeholders(domain):
+    """'@today' -> la fecha de hoy. El catalogo es estatico; las fechas no."""
+    today = date.today().strftime("%Y-%m-%d")
+    out = []
+    for element in domain:
+        if isinstance(element, str):
+            out.append(element)
+        elif _is_leaf(element):
+            field, operator, value = element
+            out.append((field, operator, today if value == "@today" else value))
+        else:
+            out.extend(_resolve_placeholders(list(element)))
+    return out
 
 
 def _apply_default_domain(cfg, domain):
@@ -73,12 +104,21 @@ def _apply_default_domain(cfg, domain):
         return domain
     asked = _domain_fields(domain)
     missing = []
-    for leaf in default:
-        field = leaf[0]
-        equivalents = _DEFAULT_EQUIVALENTS.get(field, (field,))
-        if not asked.intersection(equivalents):
-            missing.append(leaf)
-    return list(missing) + list(domain)
+    for condition in default:
+        # Un elemento puede ser un leaf suelto o un fragmento con su propio
+        # operador logico (p.ej. "vigente" = sin fecha de fin O fecha futura).
+        if _is_leaf(condition):
+            fields_used = {condition[0]}
+            fragment = _resolve_placeholders([condition])
+        else:
+            fields_used = _domain_fields(condition)
+            fragment = _resolve_placeholders(list(condition))
+        covered = set()
+        for field in fields_used:
+            covered.update(_DEFAULT_EQUIVALENTS.get(field, (field,)))
+        if not asked.intersection(covered):
+            missing.extend(fragment)
+    return missing + list(domain)
 
 
 def _split_order(order):
@@ -102,6 +142,7 @@ def aggregate(env, model, group_by, measures, domain=None, period=None,
     :param order:  'alias desc' donde alias es '<campo>_<agg>' o un campo de group_by
     :param limit:  nº maximo de grupos devueltos (tras ordenar en Python)
     """
+    model = cat.normalize_model(model)
     cfg = cat.check_model(model)
     group_by = cat.check_group_by(model, group_by)
     parsed_measures = cat.check_measures(model, measures)
@@ -189,6 +230,7 @@ def aggregate(env, model, group_by, measures, domain=None, period=None,
 def query_records(env, model, fields, domain=None, period=None,
                   order=None, limit=None):
     """Listado de registros filtrado. Traduce a search_read."""
+    model = cat.normalize_model(model)
     cfg = cat.check_model(model)
     fields = cat.check_output_fields(model, fields)
 
@@ -207,6 +249,11 @@ def query_records(env, model, fields, domain=None, period=None,
         if order_field not in cfg["output"]:
             raise cat.CatalogError(
                 "No se puede ordenar por %r: no es un campo de salida permitido." % (order_field,)
+            )
+        if order_field in cat.unsortable_fields(model):
+            raise cat.CatalogError(
+                "No se puede ordenar por %r: Odoo lo calcula al leer y no hay "
+                "columna por la que ordenar. Ordena por otro campo." % (order_field,)
             )
         order_sql = "%s %s" % (order_field, "desc" if desc else "asc")
 
