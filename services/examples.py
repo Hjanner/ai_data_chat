@@ -140,6 +140,47 @@ EXAMPLE_QUESTIONS = [
             "limit": 20,
         },
     },
+    # --- Stock y reposición ---------------------------------------------
+    {
+        "key": "s1",
+        "label": "¿Qué productos están por debajo de 10 uds y sin nada en camino?",
+        "tool": "query_records",
+        "params": {
+            "model": "product.product",
+            "fields": ["name", "default_code", "qty_available", "incoming_qty"],
+            "domain": [["type", "=", "product"],
+                       ["qty_available", "<", 10],
+                       ["incoming_qty", "<=", 0]],
+            "limit": 50,
+        },
+    },
+    {
+        "key": "s2",
+        "label": "¿Cuáles son los productos con menos stock?",
+        "tool": "query_records",
+        "params": {
+            "model": "product.product",
+            "fields": ["name", "qty_available", "incoming_qty"],
+            "domain": [["type", "=", "product"]],
+            # Odoo NO sabe ordenar por stock y, peor, lo ignora en silencio.
+            # El módulo lo ordena en Python tras leer (ver query_tools).
+            "order": "qty_available asc",
+            "limit": 10,
+        },
+    },
+    {
+        "key": "s3",
+        "label": "¿Qué hay que reponer según las reglas de reabastecimiento?",
+        "tool": "query_records",
+        "params": {
+            "model": "stock.warehouse.orderpoint",
+            "fields": ["product_id", "product_min_qty", "product_max_qty",
+                       "qty_to_order", "qty_on_hand", "warehouse_id"],
+            # `qty_to_order` sí está almacenada: esta sí ordena Odoo.
+            "order": "qty_to_order desc",
+            "limit": 50,
+        },
+    },
     # --- Recepciones ---------------------------------------------------
     {
         "key": "r1",

@@ -6,8 +6,8 @@ Es la unica frontera de seguridad de la capa de datos (junto con las ACL de
 Odoo, que se aplican igualmente porque las consultas corren con el env del
 usuario).
 
-Alcance: Ventas + Compras + Recepciones + Tarifas de proveedor + Contactos +
-Producto.
+Alcance: Ventas + Compras + Recepciones + Tarifas de proveedor + Reglas de
+reabastecimiento + Contactos + Producto (con su stock).
 """
 
 # --- Operadores permitidos en los domains -----------------------------------
@@ -232,11 +232,72 @@ CATALOG = {
     },
     "product.product": {
         "label": "Productos",
-        "filter": {"type", "categ_id", "active", "sale_ok", "purchase_ok", "list_price", "default_code", "name"},
+        "filter": {
+            "type", "categ_id", "active", "sale_ok", "purchase_ok", "list_price",
+            "default_code", "name",
+            # Stock. Son calculados SIN almacenar, pero Odoo les da metodo de
+            # busqueda, asi que filtrar si funciona.
+            "qty_available", "incoming_qty", "outgoing_qty", "virtual_available",
+            "free_qty",
+        },
         "group_by": {"categ_id", "type"},
+        # OJO: las cantidades de stock NO pueden ir aqui. No hay columna, y
+        # read_group revienta con "Cannot convert field ... to SQL".
         "measures": {"list_price", "standard_price"},
-        "output": {"name", "default_code", "list_price", "categ_id", "type", "uom_id"},
+        "output": {
+            "name", "default_code", "list_price", "categ_id", "type", "uom_id",
+            "qty_available", "incoming_qty", "outgoing_qty", "virtual_available",
+            "free_qty", "standard_price", "product_tmpl_id",
+        },
+        # Se devuelven pero Odoo no sabe ordenarlas: lo hace el modulo, en
+        # Python, despues de leer. Sin esto el ORM IGNORA el orden en silencio
+        # y devuelve un ranking falso con toda la apariencia de ser correcto.
+        "unsortable": {
+            "qty_available", "incoming_qty", "outgoing_qty", "virtual_available",
+            "free_qty",
+        },
         "default_domain": [("active", "in", [True, False])],
+        "labels": {
+            "qty_available": "Stock actual",
+            "incoming_qty": "En camino",
+            "outgoing_qty": "Comprometido",
+            "virtual_available": "Stock previsto",
+            "free_qty": "Disponible",
+            "product_tmpl_id": "Plantilla",
+        },
+    },
+    "stock.warehouse.orderpoint": {
+        "label": "Reglas de reabastecimiento",
+        "filter": {
+            "product_id", "product_category_id", "warehouse_id", "location_id",
+            "company_id", "trigger", "product_min_qty", "product_max_qty",
+            "qty_to_order", "route_id",
+        },
+        "group_by": {
+            "product_category_id", "warehouse_id", "location_id", "trigger",
+            "company_id",
+        },
+        # Estas SI estan almacenadas: se pueden sumar y ordenar con normalidad.
+        "measures": {"product_min_qty", "product_max_qty", "qty_to_order"},
+        "output": {
+            "product_id", "product_min_qty", "product_max_qty", "qty_to_order",
+            "qty_on_hand", "qty_forecast", "warehouse_id", "location_id",
+            "trigger", "product_category_id",
+        },
+        "unsortable": {"qty_on_hand", "qty_forecast"},
+        "default_domain": [],
+        "labels": {
+            "product_id": "Producto",
+            "product_min_qty": "Mínimo",
+            "product_max_qty": "Máximo",
+            "qty_to_order": "Cantidad a pedir",
+            "qty_on_hand": "Stock actual",
+            "qty_forecast": "Stock previsto",
+            "warehouse_id": "Almacén",
+            "location_id": "Ubicación",
+            "trigger": "Disparo",
+            "product_category_id": "Categoría",
+        },
     },
 }
 

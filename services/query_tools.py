@@ -244,6 +244,7 @@ def query_records(env, model, fields, domain=None, period=None,
 
     # Validar que el campo de orden es un campo de salida permitido.
     order_sql = None
+    sort_in_python = None
     if order:
         order_field, desc = _split_order(order)
         if order_field not in cfg["output"]:
@@ -251,21 +252,43 @@ def query_records(env, model, fields, domain=None, period=None,
                 "No se puede ordenar por %r: no es un campo de salida permitido." % (order_field,)
             )
         if order_field in cat.unsortable_fields(model):
-            raise cat.CatalogError(
-                "No se puede ordenar por %r: Odoo lo calcula al leer y no hay "
-                "columna por la que ordenar. Ordena por otro campo." % (order_field,)
-            )
+            # Odoo no puede ordenar por estos... y lo peor es que NO avisa:
+            # ignora el orden en silencio y devuelve un ranking con toda la
+            # apariencia de ser correcto. Se ordena aqui, en Python.
+            sort_in_python = (order_field, desc)
+            order_sql = None
+            if order_field not in fields:
+                fields = list(fields) + [order_field]
         order_sql = "%s %s" % (order_field, "desc" if desc else "asc")
 
     total = env[model].sudo(False).search_count(domain)
-    records = env[model].sudo(False).search_read(
-        domain, fields, limit=limit, order=order_sql,
-    )
+
+    partial_ranking = False
+    if sort_in_python:
+        # Para ordenar hay que leer antes: se trae un bloque acotado, se
+        # ordena y se recorta. Si los candidatos no caben en el bloque, el
+        # ranking es PARCIAL y hay que decirlo: un top-10 sacado de una
+        # muestra no es un top-10.
+        records = env[model].sudo(False).search_read(
+            domain, fields, limit=cat.MAX_LIMIT, order=None,
+        )
+        partial_ranking = total > len(records)
+        order_field, desc = sort_in_python
+        records.sort(
+            key=lambda r: (r.get(order_field) is None, r.get(order_field)),
+            reverse=desc,
+        )
+        records = records[:limit]
+    else:
+        records = env[model].sudo(False).search_read(
+            domain, fields, limit=limit, order=order_sql,
+        )
+
     for rec in records:
         for key, value in list(rec.items()):
             rec[key] = _norm_value(value)
 
-    return {
+    result = {
         "tool": "query_records",
         "model": model,
         "domain": domain,
@@ -276,3 +299,13 @@ def query_records(env, model, fields, domain=None, period=None,
         "rows": records,
         "labels": cat.column_labels(fields, model),
     }
+    if sort_in_python:
+        result["sorted_in_python"] = sort_in_python[0]
+    if partial_ranking:
+        result["partial_ranking"] = True
+        result["ranking_note"] = (
+            "Hay %d registros que cumplen el filtro y solo se han podido "
+            "ordenar los primeros %d: este orden es PARCIAL, no un ranking "
+            "global. Acota más el filtro." % (total, cat.MAX_LIMIT)
+        )
+    return result

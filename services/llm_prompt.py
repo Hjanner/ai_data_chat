@@ -20,6 +20,13 @@ _BUSINESS_CONTEXT = (
     "- VENTAS (lo que la droguería vende a las farmacias): modelos `sale.order` "
     "y `sale.order.line`. Ahí, \"cliente\" o \"farmacia\" = el contacto del "
     "campo partner_id. Estado confirmado: 'sale'; presupuesto: 'draft'/'sent'.\n"
+    "- STOCK Y REPOSICIÓN (qué hay en el almacén y qué falta): el stock vive "
+    "en `product.product` (`qty_available` lo que hay, `incoming_qty` lo que "
+    "viene, `virtual_available` la previsión). Las REGLAS DE "
+    "REABASTECIMIENTO (`stock.warehouse.orderpoint`) son la respuesta de Odoo "
+    "a \"qué hay que reponer\": traen mínimo, máximo y cantidad a pedir ya "
+    "calculada. Si un producto no tiene regla, no aparecerá ahí: dilo en vez "
+    "de dar a entender que no hace falta reponerlo.\n"
     "- TARIFAS DE PROVEEDOR (a qué precio y en cuánto tiempo puede servirnos "
     "cada proveedor un producto, independientemente de lo que ya se le haya "
     "comprado): modelo `product.supplierinfo`. Responde \"qué proveedores "
@@ -51,6 +58,12 @@ _RULES = [
     "Para \"a qué precio compramos/vendemos\" usa SIEMPRE 'price_unit:weighted' "
     "(media ponderada por cantidad), nunca 'price_unit:avg': el promedio simple "
     "de precios unitarios miente en cuanto las cantidades no son iguales.",
+    "Las cantidades de stock no se pueden sumar ni agrupar (Odoo las calcula "
+    "al leer, no hay columna). Se pueden filtrar y listar: para \"cuáles "
+    "tienen menos de N\" usa un `domain`, y para \"los N con menos stock\" "
+    "usa `order` con `limit`.",
+    "Si un resultado trae `partial_ranking`, el orden es de una muestra y no "
+    "un ranking global: dilo con claridad y sugiere acotar el filtro.",
     "En las tarifas de proveedor, el precio va SIEMPRE ligado a una cantidad "
     "mínima, y un mismo proveedor puede tener varias tarifas escalonadas del "
     "mismo producto. Cita el precio junto a su cantidad mínima; nunca digas "

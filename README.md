@@ -33,6 +33,12 @@ configurable y se adapta a cualquier negocio sobre Ventas y Compras.
 - ¿A qué proveedor le compramos más barato un producto?
 - ¿Qué proveedores tengo para este producto, a qué precio y en cuánto tiempo?
 
+**Stock y reposición**
+
+- ¿Qué productos están por debajo de 10 unidades y sin nada en camino?
+- ¿Cuáles son los 10 productos con menos stock?
+- ¿Qué hay que reponer según las reglas de reabastecimiento?
+
 **Recepciones**
 
 - ¿Qué tengo pendiente de recibir y de qué proveedores?
@@ -278,9 +284,9 @@ es lo que realmente se pagó. Tres cosas que el catálogo contempla:
   puede poner en cabeza un escalón que no se alcanza, así que `min_qty` viaja
   siempre con el precio y hay una regla en el prompt para citarlos juntos.
 - **Con descuento, el precio real es `price_discounted`** (`price × (1 −
-  descuento)`). Odoo lo calcula al leer y no tiene columna: se puede devolver,
-  pero **no ordenar ni agrupar** por él. Intentarlo da un error explicado, no
-  una lista mal ordenada. Ese es el papel de `unsortable` en el catálogo.
+  descuento)`). Odoo lo calcula al leer y no tiene columna, así que no puede
+  ordenar por él: lo hace el módulo **en Python** tras leer (ver *Stock*, más
+  abajo). Agruparlo sigue siendo imposible.
 - **Las tarifas caducadas se excluyen solas.** "Vigente" es *sin fecha de fin*
   **o** *fecha de fin futura*, y en SQL comparar `NULL` con una fecha no
   devuelve nada, así que un solo filtro no basta. El filtro por defecto admite
@@ -345,6 +351,7 @@ LLM**: el modelo solo nombra el periodo.
 | Compras | `purchase.order`, `purchase.order.line` |
 | Recepciones | `stock.picking` (solo entradas) |
 | Tarifas de proveedor | `product.supplierinfo` |
+| Stock y reposición | `product.product`, `stock.warehouse.orderpoint` |
 | Contactos | `res.partner` |
 | Productos | `product.product`, `product.template` (altas) |
 
@@ -383,11 +390,31 @@ ya hechas desactiva el filtro de estado, pero no el de "solo entradas".
 > `product_qty`, y los dominios de Odoo no comparan dos campos entre sí. La
 > respuesta estaba en otro sitio: Odoo ya mantiene ese estado en el albarán.
 
+### Stock: ordenar en Python, no en SQL
+
+Las cantidades de stock (`qty_available`, `incoming_qty`, `virtual_available`…)
+son campos calculados **sin almacenar**. Eso tiene tres consecuencias, y la
+segunda es la peligrosa:
+
+- **Filtrar sí funciona**: Odoo les da método de búsqueda, así que
+  `[("qty_available", "<", 10)]` es una consulta legítima.
+- **Ordenar por ellas no funciona, y Odoo no avisa**: ignora el orden en
+  silencio y devuelve una lista sin ordenar, con toda la apariencia de ser un
+  ranking correcto. Por eso van en `unsortable` y el módulo las ordena **en
+  Python** tras leer: trae un bloque acotado (`MAX_LIMIT`), ordena y recorta.
+  Si los candidatos no caben en el bloque, el resultado trae
+  `partial_ranking` y una nota diciendo que ese orden es de una muestra.
+- **Agregarlas es imposible**: `read_group` falla con *"Cannot convert field
+  … to SQL"*, así que no están en `measures`. Se rechaza antes de ejecutar.
+
+Para *"¿qué hay que reponer?"* existe además `stock.warehouse.orderpoint`, que
+es la respuesta propia de Odoo: mínimo, máximo y **cantidad a pedir ya
+calculada y almacenada** — esa sí se ordena y se suma con normalidad. Solo
+cubre los productos que tengan regla configurada.
+
 ### Fuera de alcance por ahora
 
-Stock disponible y reposición (`qty_available`, `incoming_qty`): se pueden
-filtrar y listar, pero **no agregar**, porque son campos calculados sin
-almacenar. Haría falta marcarlos en el catálogo como "solo listar".
+Contabilidad, facturación y márgenes.
 
 ## Estructura
 

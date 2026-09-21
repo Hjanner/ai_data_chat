@@ -11,10 +11,15 @@ periodos ABIERTOS por un extremo: `until_now` no tiene inicio y `from_now` no
 tiene fin. En esos casos el limite ausente viaja como None y
 `period_to_domain` emite un solo leaf.
 
+Todo se calcula en UTC, que es como Odoo guarda los Datetime. Usar la hora
+local del proceso haria que las ventanas salieran corridas tantas horas como
+diga la TZ del servidor, y el fallo seria silencioso: resultados verosimiles
+pero con registros de menos en los bordes.
+
 Sin dependencias de Odoo: solo datetime + python-dateutil (incluido en Odoo).
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from dateutil.relativedelta import relativedelta
 
@@ -112,7 +117,8 @@ def resolve_range(period, ref=None):
     if not period or not isinstance(period, str):
         raise PeriodError("El periodo debe ser una cadena no vacia.")
     period = period.strip().lower()
-    ref = ref or datetime.now()
+    # UTC, como guarda Odoo los Datetime (naive, pero en UTC).
+    ref = ref or datetime.now(timezone.utc).replace(tzinfo=None)
 
     if period in _NAMED:
         start, end = _NAMED[period](ref)
