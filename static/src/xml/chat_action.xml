@@ -93,6 +93,52 @@
                                         </tbody>
                                     </table>
 
+                                    <!-- Documento con líneas (presupuesto de compra) -->
+                                    <div t-if="m.action.preview.document" class="o_ai_chat_doc mt-2">
+                                        <table class="table table-sm mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Producto</th>
+                                                    <th class="o_num">Cant.</th>
+                                                    <th class="o_num">Precio</th>
+                                                    <th class="o_num">Subtotal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr t-foreach="m.action.preview.document.rows" t-as="r" t-key="r_index">
+                                                    <td t-esc="r.product"/>
+                                                    <td class="o_num" t-esc="num(r.qty, 0)"/>
+                                                    <td class="o_num" t-esc="num(r.price_unit)"/>
+                                                    <td class="o_num" t-esc="num(r.subtotal)"/>
+                                                </tr>
+                                            </tbody>
+                                            <tfoot>
+                                                <tr>
+                                                    <td colspan="3" class="text-end">Base</td>
+                                                    <td class="o_num" t-esc="num(m.action.preview.document.amount_untaxed)"/>
+                                                </tr>
+                                                <tr>
+                                                    <td colspan="3" class="text-end">Impuestos</td>
+                                                    <td class="o_num" t-esc="num(m.action.preview.document.amount_tax)"/>
+                                                </tr>
+                                                <tr class="fw-bold">
+                                                    <td colspan="3" class="text-end">
+                                                        Total <t t-esc="m.action.preview.document.currency"/>
+                                                    </td>
+                                                    <td class="o_num" t-esc="num(m.action.preview.document.amount_total)"/>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                        <div class="alert alert-warning py-1 px-2 mt-2 mb-0"
+                                             t-if="m.action.preview.document.warnings.length">
+                                            <t t-foreach="m.action.preview.document.warnings" t-as="w" t-key="w_index">
+                                                <small class="d-block">
+                                                    <i class="fa fa-exclamation-triangle me-1"/><t t-esc="w"/>
+                                                </small>
+                                            </t>
+                                        </div>
+                                    </div>
+
                                     <div class="o_ai_chat_defaults mt-2"
                                          t-if="m.action.preview.defaults.length">
                                         <small class="text-muted">

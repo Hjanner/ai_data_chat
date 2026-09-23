@@ -21,6 +21,11 @@ class WriteCatalogError(ValueError):
     """Peticion de escritura que viola el catalogo blanco."""
 
 
+# --- Topes para documentos (presupuestos de compra) -----------------------
+# Un presupuesto de seis cifras no deberia nacer de una frase.
+MAX_DOC_LINES = 20
+MAX_DOC_AMOUNT = 50000.0
+
 # Roles de contacto: vocabulario del negocio -> campos reales de Odoo.
 PARTNER_ROLES = {
     "cliente": {"customer_rank": 1},
@@ -119,6 +124,57 @@ WRITE_CATALOG = {
         "display": ["name", "default_code", "list_price"],
     },
 
+    "purchase.order": {
+        "label": "Presupuesto de compra",
+        "create": {
+            "required": ["partner_id", "lines"],
+            "optional": [],
+            "defaults": {},
+            "duplicate_on": [],
+            # Documento con lineas: la cabecera lleva `lines`, y cada linea se
+            # valida contra su propio mini-catalogo.
+            "lines": {
+                "field": "order_line",
+                "required": ["product_id", "product_qty"],
+                "optional": ["price_unit"],
+                "max": MAX_DOC_LINES,
+            },
+            "max_amount": MAX_DOC_AMOUNT,
+        },
+        "update": {"fields": []},
+        "fields": {
+            "partner_id": {
+                "type": "many2one", "label": "Proveedor", "comodel": "res.partner",
+                # Sin dominio fijo: `supplier_rank` solo lo sube Odoo al
+                # confirmar por su propio flujo, asi que en una base real casi
+                # todos los proveedores lo tienen a 0. Se valida aparte, con un
+                # criterio que si se sostiene (ver _check_is_supplier).
+                "help": "Proveedor al que se le pide el presupuesto.",
+            },
+            "lines": {
+                "type": "lines", "label": "Líneas",
+                "help": "Lista de {product_id, product_qty} y, opcionalmente, "
+                        "price_unit si la persona indica el precio a mano.",
+            },
+            "product_id": {
+                "type": "many2one", "label": "Producto", "comodel": "product.product",
+                # `create()` acepta productos no comprables: ese filtro solo
+                # existe en la interfaz de Odoo, hay que ponerlo aqui.
+                "domain": [("purchase_ok", "=", True)],
+                "domain_hint": "no está marcado como comprable",
+                "help": "Producto a comprar. Debe estar marcado como comprable.",
+            },
+            "product_qty": {
+                "type": "float", "label": "Cantidad", "min": 0.001,
+                "help": "Cantidad a pedir.",
+            },
+            "price_unit": {
+                "type": "float", "label": "Precio unitario", "min": 0.0,
+                "help": "Solo si la persona indica el precio. Si no, se toma "
+                        "de la tarifa del proveedor.",
+            },
+        },
+    },
     "res.partner": {
         "label": "Contacto",
         "create": {
@@ -204,6 +260,12 @@ def field_spec(model, field):
     return spec
 
 
+def line_config(model):
+    """Config de lineas de un documento, o None si el modelo no es documental."""
+    cfg = WRITE_CATALOG.get(model) or {}
+    return (cfg.get("create") or {}).get("lines")
+
+
 def allowed_fields(model, operation):
     """Campos que la peticion puede traer para esa operacion."""
     _cfg, op_cfg = check_model(model, operation)
@@ -233,6 +295,23 @@ def label(model, field):
         return field
 
 
+def check_line_fields(model, values):
+    """Rechaza cualquier campo de linea fuera de la lista blanca."""
+    lines_cfg = line_config(model)
+    if not lines_cfg:
+        raise WriteCatalogError("%s no admite lineas." % (model,))
+    allowed = set(lines_cfg["required"]) | set(lines_cfg.get("optional") or [])
+    if not isinstance(values, dict):
+        raise WriteCatalogError("Cada linea debe ser un objeto {campo: valor}.")
+    extra = [f for f in values if f not in allowed]
+    if extra:
+        raise WriteCatalogError(
+            "Campo(s) no permitido(s) en una linea de %s: %s. Permitidos: %s"
+            % (model, ", ".join(map(repr, extra)), ", ".join(sorted(allowed)))
+        )
+    return dict(values)
+
+
 def describe_fields(model, operation):
     """Descripcion JSON-able de los campos de la operacion (para el modelo)."""
     cfg, op_cfg = check_model(model, operation)
@@ -248,9 +327,18 @@ def describe_fields(model, operation):
 
     if operation == "create":
         recommended = set(op_cfg.get("recommended") or [])
+        lines_cfg = op_cfg.get("lines")
+        extra = {}
+        if lines_cfg:
+            extra["lines"] = {
+                "required": [_one(f) for f in lines_cfg["required"]],
+                "optional": [_one(f) for f in (lines_cfg.get("optional") or [])],
+                "max": lines_cfg["max"],
+            }
         return {
             "model": model,
             "label": cfg["label"],
+            **extra,
             "required": [_one(f) for f in op_cfg["required"]],
             "optional": [
                 dict(_one(f), recommended=f in recommended)

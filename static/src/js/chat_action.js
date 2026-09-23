@@ -2,7 +2,9 @@
 
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
-import { Component, useState, useRef, onWillStart, onPatched, markup } from "@odoo/owl";
+import {
+    Component, useState, useRef, onWillStart, onMounted, onPatched, markup,
+} from "@odoo/owl";
 
 /**
  * Markdown mínimo -> HTML, para lo que realmente devuelve el modelo:
@@ -50,6 +52,11 @@ export class AiDataChat extends Component {
             actionBusy: null,
         });
 
+        // Bajar al final solo cuando el hilo ha cambiado, no en cada patch:
+        // si no, leer mensajes antiguos es imposible porque cualquier
+        // repintado (el spinner, un botón) te devuelve al fondo.
+        this.pendingScroll = true;
+
         onWillStart(async () => {
             await this.loadSessions();
             if (this.state.sessions.length) {
@@ -59,14 +66,33 @@ export class AiDataChat extends Component {
             }
         });
 
-        onPatched(() => this.scrollToBottom());
+        // `onPatched` NO se dispara en el primer renderizado. Como los
+        // mensajes se cargan en `onWillStart`, al abrir la conversación el
+        // hilo aparecía por arriba: hace falta `onMounted` también.
+        onMounted(() => this.scrollToBottom());
+        onPatched(() => {
+            if (this.pendingScroll) {
+                this.scrollToBottom();
+            }
+        });
     }
 
     scrollToBottom() {
+        this.pendingScroll = false;
         const el = this.threadRef.el;
-        if (el) {
-            el.scrollTop = el.scrollHeight;
+        if (!el) {
+            return;
         }
+        el.scrollTop = el.scrollHeight;
+        // Segunda pasada en el siguiente fotograma: las tablas de resultados
+        // y las fichas de confirmación cambian la altura después del primer
+        // cálculo, y con una sola pasada el hilo se queda a medio bajar.
+        requestAnimationFrame(() => {
+            const thread = this.threadRef.el;
+            if (thread) {
+                thread.scrollTop = thread.scrollHeight;
+            }
+        });
     }
 
     async loadSessions() {
@@ -78,6 +104,7 @@ export class AiDataChat extends Component {
         this.state.activeId = sessionId;
         const data = await this.rpc(`/ai_data_chat/session/${sessionId}/messages`);
         this.state.messages = data.messages || [];
+        this.pendingScroll = true;
     }
 
     async newSession() {
@@ -85,6 +112,7 @@ export class AiDataChat extends Component {
         await this.loadSessions();
         this.state.activeId = data.session_id;
         this.state.messages = data.messages || [];
+        this.pendingScroll = true;
     }
 
     async send(text) {
@@ -104,6 +132,7 @@ export class AiDataChat extends Component {
                 return;
             }
             this.state.messages.push(...(res.messages || []));
+            this.pendingScroll = true;
             await this.loadSessions();
         } finally {
             this.state.loading = false;
@@ -142,6 +171,7 @@ export class AiDataChat extends Component {
             }
             if (res.message) {
                 this.state.messages.push(res.message);
+                this.pendingScroll = true;
             }
             await this.loadSessions();
         } finally {
@@ -177,6 +207,17 @@ export class AiDataChat extends Component {
                 isLabel: index === 0,
             }));
         return { columns, rows };
+    }
+
+    /** Número con separador de miles, para la tabla del documento. */
+    num(value, decimals = 2) {
+        if (typeof value !== "number") {
+            return value ?? "—";
+        }
+        return value.toLocaleString("en-US", {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        });
     }
 
     cell(value, column) {

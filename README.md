@@ -62,6 +62,7 @@ Solo esto, y solo con el grupo **Asistente de datos / Escritura**:
 | Crear contacto | Nombre y rol *cliente / proveedor / ambos* (+ teléfono, email, ciudad, dirección, RIF, etiquetas) |
 | Modificar un producto | Precio de venta, coste, referencia interna, código de barras, nombre |
 | Modificar un contacto | Nombre, teléfono, email, ciudad, dirección, RIF, etiquetas |
+| Preparar un presupuesto de compra | Proveedor y líneas (producto + cantidad), siempre en **borrador** |
 
 Cada modificación toca **un campo de un registro**, y se puede **deshacer**
 desde la propia ficha mientras nadie haya vuelto a cambiar ese valor.
@@ -79,6 +80,37 @@ El flujo es siempre el mismo:
 Un «sí» escrito en el chat no confirma nada: el modelo no dispone de ninguna
 herramienta que aplique cambios. Cada propuesta —aplicada, deshecha o
 descartada— queda registrada en *Asistente de datos → Acciones de escritura*.
+
+### Presupuestos de compra
+
+Se rigen por el mismo permiso que el resto de la escritura: **Asistente de
+datos / Escritura**.
+
+**La ficha no es una estimación.** El documento se crea de verdad dentro de un
+`savepoint`, se leen sus precios, impuestos y totales, y se deshace. Es la
+única forma de que lo que ves sea exactamente lo que se va a crear: `new()`
+—la alternativa en memoria— no calcula los impuestos y elige otro escalón de
+tarifa, así que una ficha construida con él mentiría.
+
+Tres cosas que Odoo no protege y el módulo sí:
+
+- **Nunca una línea a precio cero.** Sin tarifa del proveedor para ese
+  producto, Odoo crea la línea a 0,00 y guarda el documento sin protestar. El
+  asistente se niega, pide el precio y sugiere qué proveedores sí lo tienen.
+- **Aplica el escalón correcto.** `create()` dispara el cálculo del precio
+  antes de que la cantidad tenga su valor final, así que Odoo elige la tarifa
+  como si fuera 1 unidad: pidiendo 3 Large Cabinet a Ready Mat salía 790 en
+  vez de 785. No es su criterio —`_select_seller` ordena por precio
+  ascendente—, solo hay que volver a pedírselo con la cantidad ya puesta. Eso
+  hace `finalize_document`, en la simulación y al crear. Las líneas con precio
+  indicado a mano no se tocan.
+- **Solo productos comprables.** `purchase_ok` solo filtra en la interfaz de
+  Odoo; `create()` acepta cualquier producto.
+
+Más un techo por documento (20 líneas, 50.000 de importe) y, sobre todo:
+**se crea en borrador y no se confirma nunca**. Confirmar compromete a la
+empresa con el proveedor y genera la recepción en el almacén; eso lo hace una
+persona en Odoo, mirando el documento.
 
 ### Deshacer
 

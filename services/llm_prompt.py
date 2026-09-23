@@ -84,6 +84,20 @@ _RULES = [
 ]
 
 
+_DOCUMENT_RULES = [
+    "Puedes preparar PRESUPUESTOS DE COMPRA (`propose_create` con model "
+    "`purchase.order`): la cabecera lleva `partner_id` (el proveedor) y "
+    "`lines`, una lista de {product_id, product_qty}. Quedan SIEMPRE en "
+    "borrador: ni se confirman ni se envían al proveedor desde aquí. Si te "
+    "piden confirmarlo o enviarlo, di que eso se hace en Odoo.",
+    "No inventes precios. El precio sale de la tarifa del proveedor. Si no "
+    "hay tarifa, la herramienta te lo dirá: pregúntale el precio a la "
+    "persona y pásalo en `price_unit`, o propón otro proveedor de los que "
+    "te sugiera el error.",
+    "Si el resultado trae `warnings`, léelos en voz alta: suelen avisar de "
+    "que existe una tarifa más barata para esa cantidad.",
+]
+
 _WRITE_RULES = [
     "Puedes preparar altas y modificaciones, pero NUNCA las aplicas tú: las "
     "herramientas `propose_*` solo dejan una propuesta que la persona confirma "
@@ -125,7 +139,14 @@ def _write_catalog_lines():
         if not create_cfg and not update_cfg:
             continue
         lines.append("• %s — %s" % (model, cfg["label"]))
-        if create_cfg:
+        if create_cfg and create_cfg.get("lines"):
+            lcfg = create_cfg["lines"]
+            lines.append("    crear: %s + `lines` (máx. %d), cada línea con %s%s"
+                         % (", ".join(f for f in create_cfg["required"] if f != "lines"),
+                            lcfg["max"], ", ".join(lcfg["required"]),
+                            (" y opcionalmente %s" % ", ".join(lcfg["optional"]))
+                            if lcfg.get("optional") else ""))
+        elif create_cfg:
             lines.append("    crear, obligatorios: %s" % ", ".join(create_cfg["required"]))
             if create_cfg.get("optional"):
                 lines.append("    crear, opcionales: %s" % ", ".join(create_cfg["optional"]))
@@ -142,7 +163,7 @@ def build_system_prompt(env=None):
     lines += ["- %s" % r for r in _RULES]
     if writable:
         lines += ["", "Reglas de escritura:"]
-        lines += ["- %s" % r for r in _WRITE_RULES]
+        lines += ["- %s" % r for r in _WRITE_RULES + _DOCUMENT_RULES]
     else:
         lines += ["- Solo lectura: no dispones de herramientas para crear ni "
                   "modificar datos. Si te lo piden, di que no tienes permiso."]
@@ -284,7 +305,11 @@ def _write_tool_schemas():
     updatable = [m for m, cfg in wcat.WRITE_CATALOG.items() if (cfg.get("update") or {}).get("fields")]
     values_schema = {
         "type": "object",
-        "description": "Pares {campo: valor} con los campos del catálogo de escritura.",
+        "description": (
+            "Pares {campo: valor} con los campos del catálogo de escritura. "
+            "Para un presupuesto de compra: {'partner_id': <proveedor>, "
+            "'lines': [{'product_id': <producto>, 'product_qty': <cantidad>}]}."
+        ),
         "additionalProperties": True,
     }
     return [

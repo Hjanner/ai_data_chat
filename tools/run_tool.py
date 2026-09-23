@@ -18,7 +18,9 @@ import json
 import pprint
 
 from odoo.addons.ai_data_chat.services.tool_dispatcher import run_tool, list_tools
-from odoo.addons.ai_data_chat.services.examples import EXAMPLE_QUESTIONS, WRITE_CASES
+from odoo.addons.ai_data_chat.services.examples import (
+    EXAMPLE_QUESTIONS, WRITE_CASES, PURCHASE_CASES,
+)
 
 
 def t(tool, **params):
@@ -54,10 +56,25 @@ def demo_write():
             pprint.pprint(res, sort_dicts=False, width=120)
 
 
+def demo_purchase():
+    """Ejecuta los 3 casos de presupuesto de compra (P1-P3).
+
+    No escribe nada: simula el documento en un savepoint y deja el borrador.
+    """
+    for case in PURCHASE_CASES:
+        print("\n" + "=" * 78)
+        print("%s · %s" % (case["key"].upper(), case["label"]))
+        for i, step in enumerate(case["steps"], 1):
+            print("-" * 78)
+            print("  paso %d: %s" % (i, step["params"]["values"]))
+            res = run_tool(env, step["tool"], step["params"])  # noqa: F821
+            pprint.pprint(res, sort_dicts=False, width=120)
+
+
 def catalog():
     """Imprime el catalogo y las herramientas (lo que vera el LLM)."""
     print(json.dumps(list_tools(), indent=2, ensure_ascii=False, default=str))
 
 
 if "env" in dir():
-    print("ai_data_chat: capa de datos cargada. Funciones: demo(), demo_write(), t(), catalog()")
+    print("ai_data_chat: capa de datos cargada. Funciones: demo(), demo_write(), demo_purchase(), t(), catalog()")

@@ -109,6 +109,10 @@ class AiChatAction(models.Model):
         try:
             if self.operation == "create":
                 record = Model.create(vals)
+                # Documentos con lineas: mismo remate que en la simulacion, o
+                # el documento final no coincidiria con la ficha.
+                if wcat.line_config(self.model_name):
+                    write_tools.finalize_document(record, vals)
             else:
                 record = Model.browse(self.record_id)
                 if not record.exists():

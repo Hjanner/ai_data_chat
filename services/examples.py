@@ -305,3 +305,67 @@ WRITE_CASES = [
         ],
     },
 ]
+
+
+# --- Presupuestos de compra: los 3 casos objetivo (P1-P3) -----------------
+# Como WRITE_CASES: ninguno escribe. `propose_create` sobre purchase.order
+# SIMULA el documento dentro de un savepoint para poder enseñar precios,
+# impuestos y total reales, y deja el borrador pendiente de confirmar.
+PURCHASE_CASES = [
+    {
+        "key": "p1",
+        "label": "Presupuesto de compra de una línea",
+        "steps": [
+            {"tool": "propose_create", "params": {
+                "model": "purchase.order",
+                "values": {
+                    "partner_id": "Wood Corner",
+                    "lines": [{"product_id": "Large Cabinet", "product_qty": 10}],
+                },
+            }},
+        ],
+    },
+    {
+        "key": "p2",
+        "label": "Varias líneas, aplicando el escalón de precio correcto",
+        "steps": [
+            # Ready Mat tiene el Large Cabinet a 790 desde 1 ud y a 785 desde 3.
+            # Pidiendo 3 debe aplicarse 785: `create()` calcula el precio antes
+            # de que la cantidad esté puesta, así que hay que rematar el
+            # cálculo (ver write_tools.finalize_document).
+            {"tool": "propose_create", "params": {
+                "model": "purchase.order",
+                "values": {
+                    "partner_id": "Ready Mat",
+                    "lines": [
+                        {"product_id": "Large Cabinet", "product_qty": 3},
+                        {"product_id": "Acoustic Bloc Screens", "product_qty": 5},
+                    ],
+                },
+            }},
+        ],
+    },
+    {
+        "key": "p3",
+        "label": "Producto sin tarifa: debe pedir el precio, no crear a cero",
+        "steps": [
+            # Sin tarifa, Odoo crearía la línea a 0,00 y guardaría el documento.
+            {"tool": "propose_create", "params": {
+                "model": "purchase.order",
+                "values": {
+                    "partner_id": "Wood Corner",
+                    "lines": [{"product_id": "Cable Management Box", "product_qty": 5}],
+                },
+            }},
+            # Con el precio indicado a mano, sí procede.
+            {"tool": "propose_create", "params": {
+                "model": "purchase.order",
+                "values": {
+                    "partner_id": "Wood Corner",
+                    "lines": [{"product_id": "Cable Management Box",
+                               "product_qty": 5, "price_unit": 42.50}],
+                },
+            }},
+        ],
+    },
+]
